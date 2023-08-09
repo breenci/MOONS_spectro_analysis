@@ -52,7 +52,13 @@ def main():
     # # sort the DataFrame by the X column
     extracted_data = extracted_data.sort_values(by="X")
     fn_list = extracted_data['filename'].tolist()
-    print(fn_list)
+    
+    # open GUI
+    gui = pointSelectGUI(fn_list)
+    gui.run()
+    box_centres = gui.selection['Selected Points']
+    
+    
     
 if __name__ == "__main__":
     main()
