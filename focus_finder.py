@@ -8,7 +8,8 @@ from focus_finder_gui import pointSelectGUI
 from matplotlib.gridspec import GridSpec
 from astropy.modeling.models import custom_model
 from astropy.modeling.fitting import LevMarLSQFitter
-import math
+import lmfit
+from lmfit.lineshapes import gaussian2d, lorentzian
 
 
 def extract_variables_and_export(filenames, pattern, column_names=None):
@@ -85,92 +86,20 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30):
     # Loop through each filename and coordinates
     for filename in fits_files:
         n = 0
-        boxes = np.zeros((len(X), box_size*2, box_size*2))
+        boxes = []
         for x, y in zip(X, Y):
             # Read the fits file
-            print(filename)
             data, header = read_fits(filename)
 
             # Get the box
             box = get_box(data, x, y, box_size=box_size)
-            boxes[n, :, :] = box
+            boxes.append(box)
             n += 1
         result[filename] = boxes
         
     return result
 
 
-@custom_model
-def gaussianTest2(x,y, height=1., center_x=1., center_y=1., width_x=1., width_y=1., theta=0., base=0.0):
-    width_x = float(width_x)
-    width_y = float(width_y)
-    
-    return (height*np.exp(-(((center_x-x)/width_x)**2+((center_y-y)/width_y)**2)/2))+base
-
-
-"""
-Returns (height, x, y, width_x, width_y): the gaussian parameters of a 2D distribution by calculating its moments
-"""
-def moments(data):
-	total = data.sum()
-	#print("moments: ",total)
-	X, Y = np.indices(data.shape)
-	x = (X*data).sum()/total
-	y = (Y*data).sum()/total
-	col = data[:, int(y)]
-	width_x = np.sqrt(np.abs((np.arange(col.size)-y)**2*col).sum()/col.sum())
-	row = data[int(x), :]
-	width_y = np.sqrt(np.abs((np.arange(row.size)-x)**2*row).sum()/row.sum())
-#	print("moments:",width_x,width_y)
-	height = data.max()
-
-
-	if math.isnan(width_x):
-		width_x = 4
-	if math.isnan(width_y):
-		width_y = 4
-    
-	base = np.median(data)
-
-	return height, x, y, width_x, width_y, base
-
-
-"""
-Returns (height, x, y, width_x, width_y) the gaussian parameters of a 2D distribution found by a fit
-"""
-
-def fitgaussian(data,inputParams=None,weights=None):
-    
-    # Get input parameters
-    if inputParams is None:
-        params = moments(data)
-    else:
-        params = inputParams
-
-    #print("PAR",params)
-
-    # Mathematical model
-    M = gaussianTest2(*params)
-    
-    #initiate fitting routines
-    lmf = LevMarLSQFitter()
-    
-    # Define blank grid
-    x,y = np.mgrid[:len(data),:len(data)]
-    
-    # Fit the function, as defined in M, to the actual data
-    if weights is None:
-        fit = lmf(M,x,y,data)
-    else:
-        fit = lmf(M,x,y,data,weights=weights)
-
-
-    (height, y, x, width_y, width_x,theta,base) = (fit.height.value,fit.center_x.value,fit.center_y.value,fit.width_x.value,fit.width_y.value,fit.theta.value,fit.base.value)
-    
-    fwhmx = np.abs(2.0*np.sqrt(2.0*np.log(2.0))*width_x)
-    fwhmy = np.abs(2.0*np.sqrt(2.0*np.log(2.0))*width_y)
-
-    return height, x, y, fwhmx, fwhmy, theta, base
 
 
 def main():
@@ -197,28 +126,72 @@ def main():
     gui.run()
     box_centres = gui.selection['Selected Points']
     
-    box_dict = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1])
+    box_dict = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
+                                    box_size=box_size)
 
-    # Plot the boxes for a given file
-    nplots = len(box_centres)
-    ncols = 2 
     
-    example_box = box_dict[fn_list[11]][0]
-
-    params = fitgaussian(example_box)
-
-    fig, ax1 = plt.subplots()
-    ax1.imshow(example_box, origin='lower', vmin=0, vmax=1000)
-    ax1.scatter(params[1], params[2], marker='x', color='red')
+    # intialize the gaussian model
+    g2d_model = lmfit.models.Gaussian2dModel()
     
+    nDAMpos = len(fn_list)
+    n_points = len(box_centres)
     
+    col_names = ['DAM X', 'Xc', 'Yc', 'sigmax', 'sigmay']
     
-    # fig, ax = plt.subplots(nrows=1, ncols=nplots)
-    # for i in range(nplots):
-    #     ax[i].imshow(box_dict[fn_list[11]][i], origin='lower', vmin=0, vmax=1000)
+    # create an empty dataframe with column names from col_names
+    output_df = pd.DataFrame(columns=col_names, index=range(n_points*nDAMpos))
+    
+    # intialize the gaussian model
+    g2d_model = lmfit.models.Gaussian2dModel()
+    
+    counter = 0
+    # Loop through each box in each file and fit a 2D Gaussian
+    for fn in fn_list:
+        # get dam position from extracted_data
+        DAMx = int(extracted_data.loc[extracted_data['filename'] == fn, 'X'].iloc[0])
         
-    plt.show() 
+        for box in box_dict[fn]:
+            box_centre_counter = 0
+            X, Y = np.meshgrid(np.arange(box.shape[0]), np.arange(box.shape[1]))
+            # flatten X, Y and box to guess the parameters
+            flatX = X.flatten()
+            flatY = Y.flatten()
+            flatbox = box.flatten()
+            
+            # guess the parameters
+            params = g2d_model.guess(flatbox, flatX, flatY)
+            
+            # fit the model to the data
+            fit_result = g2d_model.fit(box, params, x=X, y=Y)
+            
+            FWHMx = fit_result.params['fwhmx'].value
+            FWHMy = fit_result.params['fwhmy'].value
+            Xc = fit_result.params['centerx'].value
+            Yc = fit_result.params['centery'].value
+            
+            output_df.loc[counter] = [DAMx, Xc, Yc, FWHMx, FWHMy]
+            
+            counter += 1
     
+    # plot the boxes from the first file
+    # find the number of boxes in the first file
+    nboxes = len(box_dict[fn_list[0]])
+    
+    print(output_df)
+    
+    # extract the fitted parameters for the boxes at DAMx_0
+    df_130 = output_df.loc[output_df['DAM X'] == 130]
+    
+    print(df_130)
+    
+    # make a figure with nboxes subplots
+    fig, ax = plt.subplots(1, nboxes, figsize=(15, 5))
+    for i in range(nboxes):
+        ax[i].imshow(box_dict[fn_list[0]][i])
+        ax[i].scatter(df_130['Xc'].iloc[i], df_130['Yc'].iloc[i], color='r')
+        ax[i].set_title('Box {}'.format(i+1))
+        
+    plt.show()
     
     
 if __name__ == "__main__":
