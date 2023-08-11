@@ -5,11 +5,7 @@ from astropy.io import fits
 import pandas as pd
 import re
 from focus_finder_gui import pointSelectGUI
-from matplotlib.gridspec import GridSpec
-from astropy.modeling.models import custom_model
-from astropy.modeling.fitting import LevMarLSQFitter
 import lmfit
-from lmfit.lineshapes import gaussian2d, lorentzian
 
 
 def extract_variables_and_export(filenames, pattern, column_names=None):
@@ -99,12 +95,10 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30):
         
     return result
 
-
-
-
 def main():
     # Sample list of filenames
     filenames = glob.glob("data/raw/test_3A.01.05/test*.fits")
+    preload_selection = "selected_points.txt"
 
     # Define the regular expression pattern
     pattern = r'(\w{3})\.(\d{3})'
@@ -122,7 +116,7 @@ def main():
     fn_list = extracted_data['filename'].tolist()
     
     # open GUI
-    gui = pointSelectGUI(fn_list)
+    gui = pointSelectGUI(fn_list, point_file=preload_selection)
     gui.run()
     box_centres = gui.selection['Selected Points']
     
@@ -173,21 +167,21 @@ def main():
             
             counter += 1
     
+    
+    # save the dataframe to a csv file
+    output_df.to_csv('output.csv', index=False)
     # plot the boxes from the first file
     # find the number of boxes in the first file
     nboxes = len(box_dict[fn_list[0]])
-    
-    print(output_df)
-    
+        
     # extract the fitted parameters for the boxes at DAMx_0
-    df_130 = output_df.loc[output_df['DAM X'] == 130]
+    df_130 = output_df.loc[output_df['DAM X'] == 142]
     
-    print(df_130)
-    
+
     # make a figure with nboxes subplots
     fig, ax = plt.subplots(1, nboxes, figsize=(15, 5))
     for i in range(nboxes):
-        ax[i].imshow(box_dict[fn_list[0]][i])
+        ax[i].imshow(box_dict[fn_list[12]][i])
         ax[i].scatter(df_130['Xc'].iloc[i], df_130['Yc'].iloc[i], color='r')
         ax[i].set_title('Box {}'.format(i+1))
         

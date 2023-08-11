@@ -10,12 +10,12 @@ import glob
 class pointSelectGUI():
     """Matplotlib GUI for point selection"""
     
-    def __init__(self, fn_list):
+    def __init__(self, fn_list, point_file=None):
         self.fn_list = fn_list
-
+        self.point_file = point_file
         self.selection = None
         
-    def run(self, point_file=None):
+    def run(self):
         print("Running GUI: FN = ", self.fn_list[0])
         self.arr_list = read_files(self.fn_list)
         
@@ -23,20 +23,20 @@ class pointSelectGUI():
         self.fig = plt.figure(figsize=(8,8))
         grid = GridSpec(7, 4)
         imax = self.fig.add_subplot(grid[:4,:])
-        self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=100)
+        self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=1000)
         cursor = Cursor(imax, useblit=True, color='red', linewidth=2)
         imax.set_aspect('auto')
         
         self.klicker = clicker(imax, ['Selected Points'], markers=['x'])
         
         # Load preselected points
-        if point_file != None:
+        if self.point_file != None:
             try:
-                preselection = np.loadtxt(point_file)
+                preselection = np.loadtxt(self.point_file)
                 self.klicker.set_positions({"Selected Points":preselection})
                 self.klicker._update_points()
             except Exception as e:
-                print(f"Error: Unable to load the file '{point_file}'.")
+                print(f"Error: Unable to load the file '{self.point_file}'.")
                 print(f"Error message: {e}")
             
         # add slider for file selection
@@ -59,7 +59,9 @@ class pointSelectGUI():
         
     def _button_callback(self, event):
         self.selection = self.klicker.get_positions()
+        np.savetxt('selected_points.txt', self.selection['Selected Points'])
         plt.close()
+    
         
         
 
