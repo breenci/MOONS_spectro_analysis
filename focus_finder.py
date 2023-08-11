@@ -111,12 +111,12 @@ def main():
     extracted_data = extract_variables_and_export(filenames, pattern, 
                                                   column_names=custom_column_names)
     
-    # # sort the DataFrame by the X column
+    # sort the DataFrame by the X column
     extracted_data = extracted_data.sort_values(by="X")
     fn_list = extracted_data['filename'].tolist()
     
     # open GUI
-    gui = pointSelectGUI(fn_list, point_file=preload_selection)
+    gui = pointSelectGUI(fn_list, point_file=preload_selection, DAM_positions=extracted_data['X'].tolist())
     gui.run()
     box_centres = gui.selection['Selected Points']
     
@@ -145,7 +145,6 @@ def main():
         DAMx = int(extracted_data.loc[extracted_data['filename'] == fn, 'X'].iloc[0])
         
         for box in box_dict[fn]:
-            box_centre_counter = 0
             X, Y = np.meshgrid(np.arange(box.shape[0]), np.arange(box.shape[1]))
             # flatten X, Y and box to guess the parameters
             flatX = X.flatten()
@@ -176,7 +175,6 @@ def main():
         
     # extract the fitted parameters for the boxes at DAMx_0
     df_130 = output_df.loc[output_df['DAM X'] == 142]
-    
 
     # make a figure with nboxes subplots
     fig, ax = plt.subplots(1, nboxes, figsize=(15, 5))

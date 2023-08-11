@@ -10,13 +10,14 @@ import glob
 class pointSelectGUI():
     """Matplotlib GUI for point selection"""
     
-    def __init__(self, fn_list, point_file=None):
+    def __init__(self, fn_list, point_file=None, DAM_positions=None):
         self.fn_list = fn_list
         self.point_file = point_file
         self.selection = None
+        self.DAM_positions = DAM_positions
         
     def run(self):
-        print("Running GUI: FN = ", self.fn_list[0])
+        print("Running GUI", self.fn_list[0])
         self.arr_list = read_files(self.fn_list)
         
         # Create a figure with grid
@@ -38,17 +39,29 @@ class pointSelectGUI():
             except Exception as e:
                 print(f"Error: Unable to load the file '{self.point_file}'.")
                 print(f"Error message: {e}")
-            
+                
+        
         # add slider for file selection
-        slideax = self.fig.add_subplot(grid[5, :])
-        fn_slider = Slider(ax=slideax, valmin=0, valmax=len(self.fn_list), valstep=1,
-                           label='Slide')
-        fn_slider.on_changed(self._slider_update)
+        # If DAM positions are given, add slider for DAM position selection
+        if self.DAM_positions != None:
+            DAM_slider_ax = self.fig.add_subplot(grid[4, :])
+            DAM_slider = Slider(ax=DAM_slider_ax, valmin=0, valmax=len(self.DAM_positions), valstep=1,
+                                label='DAM')
+            DAM_slider.on_changed(self._slider_update)
+        
+        else:
+            slideax = self.fig.add_subplot(grid[5, :])
+            fn_slider = Slider(ax=slideax, valmin=0, valmax=len(self.fn_list), valstep=1,
+                            label='Slide')
+            fn_slider.on_changed(self._slider_update)
         
         # add button to confim selection
         bax = self.fig.add_subplot(grid[6, :])
         bsave = Button(bax, 'Save and Run')
         bsave.on_clicked(self._button_callback)
+        
+        # Add check box to save points
+        
         
         plt.show()
     
