@@ -92,13 +92,15 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
     for filename in fits_files:
         n = 0
         boxes = []
+        print(type(dark))
         for x, y in zip(X, Y):
             # Read the fits file
             data, header = read_fits(filename)
             
             # Subtract the dark frame if provided
-            if dark:
-                data -= dark
+            if dark is not None:
+                dark_data, _ = read_fits(dark)
+                data -= dark_data
 
             # Get the box
             box = get_box(data, x, y, box_size=box_size)
@@ -107,6 +109,13 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
         result[filename] = boxes
         
     return result
+
+
+def encircled(arr,rings,cens):
+    centre = np.sum(arr[int(cens[1])-rings[0]:int(cens[1])+rings[0]+1,int(cens[0])-rings[0]:int(cens[0])+rings[0]+1])
+    outer  = np.sum(arr[int(cens[1])-rings[1]:int(cens[1])+rings[1]+1,int(cens[0])-rings[1]:int(cens[0])+rings[1]+1]) 
+
+    return(centre/outer)
 
 
 def main():
@@ -124,6 +133,7 @@ def main():
     # parse the arguments
     args = parser.parse_args()
     
+    print(args.dark)
     # Sample list of filenames
     filenames = glob.glob(args.folder)
     
@@ -131,7 +141,7 @@ def main():
     if args.box_size:
         box_size = args.box_size
     else:
-        box_size = 15
+        box_size = 30
 
     # Define the regular expression pattern
     pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
@@ -174,7 +184,7 @@ def main():
     
     nDAMpos = len(fn_list)
     n_points = len(box_centres)
-    col_names = ['DAM X','DAM Y', 'DAM Z', 'Xc', 'Yc', 'FWHMx', 'FWHMy']
+    col_names = ['File', 'DAM X','DAM Y', 'DAM Z', 'Xc', 'Yc', 'FWHMx', 'FWHMy', 'EE']
     
     # create an empty dataframe with column names from col_names
     output_df = pd.DataFrame(columns=col_names, index=range(n_points*nDAMpos))
@@ -208,7 +218,9 @@ def main():
             Xc = fit_result.params['centerx'].value
             Yc = fit_result.params['centery'].value
             
-            output_df.loc[counter] = [DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy]
+            EE = encircled(box, [3,7], [Xc,Yc])
+            
+            output_df.loc[counter] = [fn, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE]
             
             counter += 1
     
@@ -221,18 +233,16 @@ def main():
     # ---------------------------------------------------------------------
     
     # plot the each box with the fitted gaussian
-    ncols = 3
+    ncols = 5
     nboxes = len(box_dict[fn_list[0]])
     nrows = int(np.ceil(nboxes/ncols))
     
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15, 15))
-    flat_axes = axes.flatten()
-    for i in range(nboxes):
-        ax = flat_axes[i]
-        ax.imshow(box_dict[fn_list[0]][i])
-        ax.set_title('Box {}'.format(i))
-        ax.axis('off')
-    plt.show()
+    output1_df = output_df.loc[output_df['File'] == fn_list[0]]
+    
+    # plot the peak of the gaussian for each box for the first file
+    fig, ax = plt.subplots(nrows=1, ncols=ncols, figsize=(20, 4))
+    
+
 
 if __name__ == "__main__":
     main()
