@@ -1,7 +1,7 @@
 from mpl_point_clicker import clicker
 import matplotlib.pyplot as plt
 from astropy.io import fits
-from matplotlib.widgets import Cursor, Slider, Button
+from matplotlib.widgets import Cursor, Slider, Button, CheckButtons
 from matplotlib.gridspec import GridSpec
 import numpy as np
 import glob
@@ -16,19 +16,22 @@ class pointSelectGUI():
         self.selection = None
         self.DAM_positions = DAM_positions
         
+                
     def run(self):
         print("Running GUI", self.fn_list[0])
         self.arr_list = read_files(self.fn_list)
+        self.current_arr = self.arr_list[0]
         
         # Create a figure with grid
-        self.fig = plt.figure(figsize=(8,8))
+        self.fig = plt.figure(figsize=(12,8))
         grid = GridSpec(7, 4)
-        imax = self.fig.add_subplot(grid[:4,:])
-        self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=1000)
-        cursor = Cursor(imax, useblit=True, color='red', linewidth=2)
+        imax = self.fig.add_subplot(grid[:5,:])
+        self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=100)
+        cursor = Cursor(imax, useblit=True, color='red', linewidth=.5)
         imax.set_aspect('auto')
         
-        self.klicker = clicker(imax, ['Selected Points'], markers=['x'])
+        self.klicker = clicker(imax, ['Selected Points'], markers=['x'], 
+                               colors=['red'], legend_loc='upper center')
         
         # Load preselected points
         if self.point_file != None:
@@ -39,12 +42,16 @@ class pointSelectGUI():
             except Exception as e:
                 print(f"Error: Unable to load the file '{self.point_file}'.")
                 print(f"Error message: {e}")
-                
+        
+        # # add a subplot to show most recent point
+        # subax = self.fig.add_subplot(grid[5, :])
+        # self.subim = subax.imshow(np.array([0]), vmin=0, vmax=100)       
+        
         
         # add slider for file selection
         # If DAM positions are given, add slider for DAM position selection
         if self.DAM_positions != None:
-            DAM_slider_ax = self.fig.add_subplot(grid[4, :])
+            DAM_slider_ax = self.fig.add_subplot(grid[5, :])
             DAM_slider = Slider(ax=DAM_slider_ax, valmin=0, valmax=len(self.DAM_positions), valstep=1,
                                 label='DAM')
             DAM_slider.on_changed(self._slider_update)
@@ -52,33 +59,47 @@ class pointSelectGUI():
         else:
             slideax = self.fig.add_subplot(grid[5, :])
             fn_slider = Slider(ax=slideax, valmin=0, valmax=len(self.fn_list), valstep=1,
-                            label='Slide')
+                            label='File Index')
             fn_slider.on_changed(self._slider_update)
         
         # add button to confim selection
-        bax = self.fig.add_subplot(grid[6, :])
-        bsave = Button(bax, 'Save and Run')
-        bsave.on_clicked(self._button_callback)
+        bax = self.fig.add_subplot(grid[6, :3])
+        brun = Button(bax, 'Run Analysis and Close')
+        brun.on_clicked(self._run_button_callback)
         
         # Add check box to save points
-        
-        
+        bax = self.fig.add_subplot(grid[6, 3])
+        bsave = Button(bax, 'Save Points')
+        bsave.on_clicked(self._save_button_callback)
         plt.show()
     
     def _slider_update(self, val):
         print(self.fn_list[val])
         self.im.set_data(self.arr_list[val])
         self.fig.canvas.draw_idle()
-        
-    def _button_callback(self, event):
+        self.current_arr = self.arr_list[val]
+            
+    def _run_button_callback(self, event):
         self.selection = self.klicker.get_positions()
-        np.savetxt('selected_points.txt', self.selection['Selected Points'])
         plt.close()
+        
+    def _save_button_callback(self, event):
+        pos = self.klicker.get_positions()
+        np.savetxt('points.txt', pos["Selected Points"])
+        
+    # def _on_points_changed(self, event):
+    #     pos = self.klicker.get_positions()
+    #     last_point = pos["Selected Points"][-1]
+    #     box = self._get_box(last_point)
+    #     self.subim.set_data(box)
     
-        
-        
+    # def _get_box(self, point):
+    #     """Return a box around the given point"""
+    #     x, y = point
+    #     box = self.current_arr[y-10:y+10, x-10:x+10]
+    #     return box
 
-
+        
 def read_files(fn_list):
     """Read MOONS frame fits file and output frame as array"""
 
@@ -90,7 +111,6 @@ def read_files(fn_list):
         arr_list.append(frame_data)
     
     return arr_list
-
         
             
 if __name__ == '__main__':
