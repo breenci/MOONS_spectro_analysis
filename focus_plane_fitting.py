@@ -222,7 +222,7 @@ def main():
     # Plotting options....
     savePlotsPDF = False
     plotBestFocus = True   
-    gridSpots = True                    
+    gridSpots = False                   
     movements = True
     encircled = True
     fittedPlane = True
@@ -275,8 +275,6 @@ def main():
             xValuesBest, fwhxBest, fwhyBest, xposBest, yposBest, spotLabelsBest,  originalFWHMxBest, originalFWHMyBest, EEBest = pickle.load(f)
 
 
-   
-    
     # Current workign directory - needed later.
     cwd = os.getcwd()
 
