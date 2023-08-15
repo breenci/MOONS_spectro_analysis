@@ -133,7 +133,6 @@ def main():
     # parse the arguments
     args = parser.parse_args()
     
-    print(args.dark)
     # Sample list of filenames
     filenames = glob.glob(args.folder)
     
@@ -227,7 +226,8 @@ def main():
     
     # save the dataframe to a csv file
     output_df.to_csv('output.csv', index=False)
-    
+
+
     # ---------------------------------------------------------------------
     # Plotting
     # ---------------------------------------------------------------------
@@ -237,10 +237,19 @@ def main():
     nboxes = len(box_dict[fn_list[0]])
     nrows = int(np.ceil(nboxes/ncols))
     
+    print(nrows, ncols, nboxes)
+    
     output1_df = output_df.loc[output_df['File'] == fn_list[0]]
     
-    # plot the peak of the gaussian for each box for the first file
-    fig, ax = plt.subplots(nrows=1, ncols=ncols, figsize=(20, 4))
+    # # for each entry in output1_df, plot the box which corresponds to the first file
+    # # and over plot the fitted gaussian parameters from output1_df
+    # fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15,15))
+    # flat_axes = axes.flatten()
+    # for i in range(len(box_centres)):
+    #     flat_axes[i].imshow(box_dict[fn_list[0]][i])
+    #     flat_axes[i].scatter(output1_df['Xc'].iloc[i], output1_df['Yc'].iloc[i], color='r')
+    # plt.show()
+        
     
 
 

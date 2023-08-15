@@ -10,11 +10,12 @@ import glob
 class pointSelectGUI():
     """Matplotlib GUI for point selection"""
     
-    def __init__(self, fn_list, point_file=None, DAM_positions=None):
+    def __init__(self, fn_list, point_file=None, DAM_positions=None, box_size=30):
         self.fn_list = fn_list
         self.point_file = point_file
         self.selection = None
         self.DAM_positions = DAM_positions
+        self.box_size = box_size
         
                 
     def run(self):
@@ -25,7 +26,7 @@ class pointSelectGUI():
         # Create a figure with grid
         self.fig = plt.figure(figsize=(12,8))
         grid = GridSpec(7, 4)
-        imax = self.fig.add_subplot(grid[:5,:])
+        imax = self.fig.add_subplot(grid[:5,:3])
         self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=100)
         cursor = Cursor(imax, useblit=True, color='red', linewidth=.5)
         imax.set_aspect('auto')
@@ -43,9 +44,12 @@ class pointSelectGUI():
                 print(f"Error: Unable to load the file '{self.point_file}'.")
                 print(f"Error message: {e}")
         
-        # # add a subplot to show most recent point
-        # subax = self.fig.add_subplot(grid[5, :])
-        # self.subim = subax.imshow(np.array([0]), vmin=0, vmax=100)       
+        # add a subplot to show most recent point
+        subax = self.fig.add_subplot(grid[:5, 3])
+        self.subim = subax.imshow(np.array(np.zeros((self.box_size, self.box_size))), vmin=0, vmax=100)
+        # turn off axis
+        subax.axis('off')
+        self.klicker.on_point_added(self._on_points_changed)      
         
         
         # add slider for file selection
@@ -87,17 +91,20 @@ class pointSelectGUI():
         pos = self.klicker.get_positions()
         np.savetxt('points.txt', pos["Selected Points"])
         
-    # def _on_points_changed(self, event):
-    #     pos = self.klicker.get_positions()
-    #     last_point = pos["Selected Points"][-1]
-    #     box = self._get_box(last_point)
-    #     self.subim.set_data(box)
+    def _on_points_changed(self, position, klass):
+        print(f"Point added: {position}")
+        box = self._get_box(position)
+        self.subim.set_data(box)
+        self.fig.canvas.draw_idle()
+
     
-    # def _get_box(self, point):
-    #     """Return a box around the given point"""
-    #     x, y = point
-    #     box = self.current_arr[y-10:y+10, x-10:x+10]
-    #     return box
+    def _get_box(self, point):
+        """Return a box around the given point"""
+        x, y = point
+        x = int(x)
+        y = int(y)
+        box = self.current_arr[y-self.box_size//2:y+self.box_size//2, x-self.box_size//2:x+self.box_size//2]
+        return box
 
         
 def read_files(fn_list):
