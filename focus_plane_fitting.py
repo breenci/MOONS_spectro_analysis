@@ -2,6 +2,7 @@ import numpy as np
 import glob
 import matplotlib.pyplot as plt
 import pandas as pd
+from scipy.interpolate import UnivariateSpline
 
 
 def find_plane(p1, p2, p3):
@@ -47,6 +48,33 @@ def find_point_on_plane(A, B, C, D, known_coords, missing_coord='z'):
     return missing_coord_val
 
 
+# write a function which takes Z and a score as input and fits a spline to the
+# score. Then find the Z value at the minimum of the spline over the range of Z
+# if there are any outliers, remove them and refit the spline
+def fit_spline(Z, score, k=4, outlier_f=1.5, minZ_step=0.01):
+    
+    # fit the spline
+    spline_1D = UnivariateSpline(Z, score, k=k)
+    
+    # outlier removal using residual
+    residual = score - spline_1D(Z)
+    # find the outliers
+    outliers_mask = np.abs(residual) > outlier_f * np.std(residual)
+    # remove the outliers present and refit the spline
+    if outliers_mask.sum() > 0:
+        Z = Z[~outliers_mask]
+        score = score[~outliers_mask]
+        spline_1D = UnivariateSpline(Z, score, k=k)
+        
+    # find the minimum of the spline
+    spline_points = np.arange(Z[0], Z[-1], minZ_step/2)
+    spline_min_Z= spline_points[np.argmin(spline_1D(spline_points))]
+    spline_min_score = spline_1D(spline_min_Z)
+    
+    return spline_1D, (spline_min_Z, spline_min_score)
+    
+
+
 def main():
     DAM_offsets = [[0, 0,-263.5] ,[0, -228.2,131.7], [0, 228.2,131.7]]
 
@@ -76,8 +104,6 @@ def main():
     Zc = output_df['Yc'].values * pixel_size
     Xc = DAMXx
     
-    print(Zc)
-    
     
     # plot the DAM positions in 3D
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -94,6 +120,31 @@ def main():
     ax.set_zlabel('Z')
     ax.legend()
     plt.show()
+    
+    
+    
+    # get the FWXMx values for points with point id == 0
+    for point_id in np.unique(output_df['Point ID'].values):
+        id0_df = output_df[output_df['Point ID'] == point_id]
+        
+        Zc_id0 = id0_df['DAM X'].values * DAM_step_size
+        FWHMx = id0_df['FWHMx'].values
+        FWHMx[5] = FWHMx[5] * 1.5
+
+        spline_1D, spline_min = fit_spline(Zc_id0, FWHMx)
+        
+        spline_points = np.linspace(Zc_id0[0], Zc_id0[-1], 100)
+        
+        
+        fig, ax = plt.subplots()
+        ax.scatter(Zc_id0, FWHMx)
+        ax.plot(spline_points, spline_1D(spline_points))
+        ax.scatter(spline_min[0], spline_min[1], color='r')
+        ax.set_xlabel('Z')
+        ax.set_ylabel('FWHMx')
+        ax.set_title(f'Point ID = {point_id}')
+    plt.show()
+    
 
 if __name__ == "__main__":
     main()
