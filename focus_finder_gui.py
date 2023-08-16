@@ -103,7 +103,7 @@ class pointSelectGUI():
         x, y = point
         x = int(x)
         y = int(y)
-        box = self.current_arr[y-self.box_size//2:y+self.box_size//2, x-self.box_size//2:x+self.box_size//2]
+        box = self.current_arr[y-self.box_size:y+self.box_size, x-self.box_size:x+self.box_size]
         return box
 
         
