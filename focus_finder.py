@@ -60,8 +60,11 @@ def get_box(array, x, y, box_size=30):
     
     # Get the box
     box = array[y_discrete - box_size:y_discrete + box_size, x_discrete - box_size:x_discrete + box_size]
+    
+    # also record the poistion of the box 0,0 in the original array
+    box0 = [y_discrete - box_size, x_discrete - box_size]
 
-    return box
+    return box, box0
 
 
 # write a function which takes reads a fits file and returns the data as a 2D array
@@ -88,11 +91,11 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
     :return: A dictionary with filenames as keys and 3D arrays of boxes as values.
     """
     result = {}
+    box0s = []
     # Loop through each filename and coordinates
     for filename in fits_files:
         n = 0
         boxes = []
-        print(type(dark))
         for x, y in zip(X, Y):
             # Read the fits file
             data, header = read_fits(filename)
@@ -103,12 +106,14 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
                 data -= dark_data
 
             # Get the box
-            box = get_box(data, x, y, box_size=box_size)
+            box, box0 = get_box(data, x, y, box_size=box_size)
             boxes.append(box)
+            box0s.append(box0)
+            print(n)
             n += 1
         result[filename] = boxes
         
-    return result
+    return result, np.array(box0s)
 
 
 def encircled(arr,rings,cens):
@@ -167,22 +172,26 @@ def main():
     # get the selected points
     box_centres = gui.selection['Selected Points']
     
+    # box start and end points
+    # todo: check this works
+    box_start = box_centres - args.box_size/2
+    
     if args.dark:
         # get the boxes around the selected points
-        box_dict = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
+        box_dict, box0 = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
                                         box_size=args.box_size, dark=args.dark)
     else:
         # get the boxes around the selected points
-        box_dict = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
+        box_dict, box0 = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
                                         box_size=args.box_size)
 
-    
+    print(box0)
     # intialize the gaussian model
     g2d_model = lmfit.models.Gaussian2dModel()
     
     nDAMpos = len(fn_list)
     n_points = len(box_centres)
-    col_names = ['File', 'DAM X','DAM Y', 'DAM Z', 'Xc', 'Yc', 'FWHMx', 'FWHMy', 'EE']
+    col_names = ['File', 'Point ID', 'DAM X','DAM Y', 'DAM Z', 'Xc', 'Yc', 'FWHMx', 'FWHMy', 'EE']
     
     # create an empty dataframe with column names from col_names
     output_df = pd.DataFrame(columns=col_names, index=range(n_points*nDAMpos))
@@ -198,12 +207,15 @@ def main():
         DAMy = int(extracted_data.loc[extracted_data['filename'] == fn, 'Y'].iloc[0])
         DAMz = int(extracted_data.loc[extracted_data['filename'] == fn, 'Z'].iloc[0])
 
+        box_counter = 0
         for box in box_dict[fn]:
             X, Y = np.meshgrid(np.arange(box.shape[0]), np.arange(box.shape[1]))
             # flatten X, Y and box to guess the parameters
             flatX = X.flatten()
             flatY = Y.flatten()
             flatbox = box.flatten()
+            
+            print(np.shape(box))
             
             # guess the parameters
             params = g2d_model.guess(flatbox, flatX, flatY)
@@ -213,13 +225,13 @@ def main():
             
             FWHMx = fit_result.params['fwhmx'].value
             FWHMy = fit_result.params['fwhmy'].value
-            Xc = fit_result.params['centerx'].value
-            Yc = fit_result.params['centery'].value
+            Xc = fit_result.params['centerx'].value + box0[counter,0]
+            Yc = fit_result.params['centery'].value + box0[counter,1]
             
             EE = encircled(box, [3,7], [Xc,Yc])
             
-            output_df.loc[counter] = [fn, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE]
-            
+            output_df.loc[counter] = [fn, box_counter, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE]
+            box_counter += 1
             counter += 1
     
     
@@ -242,12 +254,12 @@ def main():
     
     # for each entry in output1_df, plot the box which corresponds to the first file
     # and over plot the fitted gaussian parameters from output1_df
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15,15))
-    flat_axes = axes.flatten()
-    for i in range(len(box_centres)):
-        flat_axes[i].imshow(box_dict[fn_list[0]][i])
-        flat_axes[i].scatter(output1_df['Xc'].iloc[i], output1_df['Yc'].iloc[i], color='r')
-    plt.show()
+    # fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15,15))
+    # flat_axes = axes.flatten()
+    # for i in range(len(box_centres)):
+    #     flat_axes[i].imshow(box_dict[fn_list[0]][i])
+    #     flat_axes[i].scatter(output1_df['Xc'].iloc[i], output1_df['Yc'].iloc[i], color='r')
+    # plt.show()
         
     
 
