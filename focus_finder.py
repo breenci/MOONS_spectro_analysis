@@ -126,7 +126,7 @@ def main():
     parser.add_argument("folder", help="Folder containing the data")
     
     # add optional arguments for box size and preload selection
-    parser.add_argument("-b", "--box_size", type=int, default=15, help="Size of the box around each point")
+    parser.add_argument("-b", "--box_size", type=int, default=30, help="Size of the box around each point")
     parser.add_argument("-p", "--preload_selection", help="File containing preloaded selection")
     parser.add_argument("-d", "--dark", help="Dark frame to subtract from the data")
     
@@ -137,11 +137,8 @@ def main():
     filenames = glob.glob(args.folder)
     
     # check if box size is specified. If not, use default value
-    if args.box_size:
-        box_size = args.box_size
-    else:
-        box_size = 30
 
+    print(f"Box size: {args.box_size}")
     # Define the regular expression pattern
     pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
 
@@ -159,9 +156,11 @@ def main():
     
     if args.preload_selection:
         preload_selection = args.preload_selection
-        gui = pointSelectGUI(fn_list, point_file=preload_selection, DAM_positions=extracted_data['X'].tolist())
+        gui = pointSelectGUI(fn_list, point_file=preload_selection, 
+                             DAM_positions=extracted_data['X'].tolist(), box_size=args.box_size)
     else:    
-        gui = pointSelectGUI(fn_list, DAM_positions=extracted_data['X'].tolist())
+        gui = pointSelectGUI(fn_list, DAM_positions=extracted_data['X'].tolist(), 
+                             box_size=args.box_size)
     
     # run the GUI
     gui.run()
@@ -171,11 +170,11 @@ def main():
     if args.dark:
         # get the boxes around the selected points
         box_dict = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
-                                        box_size=box_size, dark=args.dark)
+                                        box_size=args.box_size, dark=args.dark)
     else:
         # get the boxes around the selected points
         box_dict = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
-                                        box_size=box_size)
+                                        box_size=args.box_size)
 
     
     # intialize the gaussian model
@@ -241,14 +240,14 @@ def main():
     
     output1_df = output_df.loc[output_df['File'] == fn_list[0]]
     
-    # # for each entry in output1_df, plot the box which corresponds to the first file
-    # # and over plot the fitted gaussian parameters from output1_df
-    # fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15,15))
-    # flat_axes = axes.flatten()
-    # for i in range(len(box_centres)):
-    #     flat_axes[i].imshow(box_dict[fn_list[0]][i])
-    #     flat_axes[i].scatter(output1_df['Xc'].iloc[i], output1_df['Yc'].iloc[i], color='r')
-    # plt.show()
+    # for each entry in output1_df, plot the box which corresponds to the first file
+    # and over plot the fitted gaussian parameters from output1_df
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15,15))
+    flat_axes = axes.flatten()
+    for i in range(len(box_centres)):
+        flat_axes[i].imshow(box_dict[fn_list[0]][i])
+        flat_axes[i].scatter(output1_df['Xc'].iloc[i], output1_df['Yc'].iloc[i], color='r')
+    plt.show()
         
     
 
