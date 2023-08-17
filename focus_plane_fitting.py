@@ -3,6 +3,7 @@ import glob
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.interpolate import UnivariateSpline
+import math
 
 
 def find_plane(p1, p2, p3):
@@ -100,130 +101,187 @@ def fit_spline(Z, score, k=4, outlier_f=1.5, minZ_step=0.01):
     spline_min_score = spline_1D(spline_min_Z)
     
     return spline_1D, (spline_min_Z, spline_min_score)
+
+
+def create_subplot_grid(num_plots):
+    # Calculate the number of rows and columns for the subplot grid
+    num_rows = int(math.sqrt(num_plots))
+    num_cols = math.ceil(num_plots / num_rows)
+
+    # Create the subplot grid
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(12, 8))
+
+    # Flatten the axes array if needed
+    if num_plots == 1:
+        axes = [axes]
+
+    return fig, axes
+
+
+# write a function which finds the minimum of a score as a function of Z for
+# each box id
+def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01, 
+                score_label='Score'):
+    # make sure the arrays are numpy arrays
+    coords = np.array(coords)
+    score = np.array(score)
+    ID_arr = np.array(ID_arr)
+    
+    # separate the Z and ID values for each box
+    unique_IDs = np.unique(ID_arr)
+    minima = np.zeros((len(unique_IDs), 3))
+    fig, axes = create_subplot_grid(len(unique_IDs))
+    axes = axes.flatten()
+    for n, ID in enumerate(unique_IDs):
+        
+        coords_id = coords[ID_arr == ID]
+        
+        X_id = coords_id[:,0]
+        Y_id = coords_id[:,1]
+        
+        X_min = np.median(X_id)
+        Y_min = np.median(Y_id)
+        
+        Z_id = coords_id[:,2]
+        
+        score_id = score[ID_arr == ID]
+        
+        spline_fit, spline_min = fit_spline(Z_id, score_id, outlier_f=DAM_stoutlier_f, minZ_step=minZ_step)
+        minima[n] = np.array([X_min, Y_min, spline_min[0]])
+        
+        spline_points = np.linspace(Z_id[0], Z_id[-1], 100)
+        # sanity check the spline minima
+        axes[n].scatter(Z_id, score_id)
+        axes[n].plot(spline_points, spline_fit(spline_points))
+        axes[n].scatter(spline_min[0], spline_min[1], color='r')
+        axes[n].set_xlabel('Z')
+        axes[n].set_ylabel(score_label)
+        axes[n].set_title(f'Point ID = {ID}')
+    
+    plt.show()
+        
+    return unique_IDs, minima
     
 
-
-
 def main():
-    DAM_offsets = [[0, 0,-263.5] ,[0, -228.2,131.7], [0, 228.2,131.7]]
+    # Define the DAM offsets
+    # Coordinate system is X, Y are in the plane of the detector and Z is along
+    # the direction of travel of the motors 
+    DAM_offsets = [[0, -263.5, 0] ,[-228.2, 131.7, 0], [228.2, 131.7, 0]]
 
     
     # Convert pixel coordinates to mm
     pixel_size = 0.015 #15 micron pixels
     DAM_step_size = 0.01 # 10 micron steps
     
+    # read in the output file
     output_df = pd.read_csv('output.csv')
     
-    # Get X values of DAMX
-    DAMXx = output_df['DAM X'].values * DAM_step_size
-    # get xyz values of DAMX
-    DAMX = np.tile(DAM_offsets[0], (len(DAMXx), 1))
-    DAMX[:,0] = DAMXx
+    # convert the DAM positions to mm
+    output_df['DAM X'] = output_df['DAM X'] * DAM_step_size
+    output_df['DAM Y'] = output_df['DAM Y'] * DAM_step_size
+    output_df['DAM Z'] = output_df['DAM Z'] * DAM_step_size
     
-    # repeat for DAMY and DAMZ
-    DAMYx = output_df['DAM Y'].values * DAM_step_size
-    DAMY = np.tile(DAM_offsets[1], (len(DAMYx), 1))
-    DAMY[:,0] = DAMYx
+    # convert the Xc, Yc, FWHMx and FWHMy to mm
+    output_df['Xc'] = output_df['Xc'] * pixel_size
+    output_df['Yc'] = output_df['Yc'] * pixel_size
+    output_df['FWHMx'] = output_df['FWHMx'] * pixel_size
+    output_df['FWHMy'] = output_df['FWHMy'] * pixel_size
     
-    DAMZx = output_df['DAM Z'].values * DAM_step_size
-    DAMZ = np.tile(DAM_offsets[2], (len(DAMZx), 1))
-    DAMZ[:,0] = DAMZx
+    # rename the columns to reflect unit change
+    # output_df.rename(columns={'DAM X': 'DAM X (mm)', 'DAM Y': 'DAM Y (mm)', 'DAM Z': 'DAM Z (mm)'}, inplace=True)
     
-    Yc = output_df['Xc'].values * pixel_size
-    Zc = output_df['Yc'].values * pixel_size
-    Xc = DAMXx
+    # confusingly the individual DAMS are labelled DAM1, DAM2 and DAM3
+    # These are three DAMs with individually each have an XYZ position
+    # I will refer to DAM1 as DAM1, DAM2 as DAM2 and DAM3 as DAM3 to avoid
+    # variable name confusion
     
-    spline_mins = np.zeros((len(np.unique(output_df['Point ID'].values)), 3))
-        # get the FWXMx values for points with point id == 0
-    for point_id in np.unique(output_df['Point ID'].values):
-        id0_df = output_df[output_df['Point ID'] == point_id]
-        
-        Zc_id0 = id0_df['DAM X'].values * DAM_step_size
-        FWHMx = id0_df['FWHMx'].values
-        FWHMx[5] = FWHMx[5] * 1.5
-
-        spline_1D, spline_min = fit_spline(Zc_id0, FWHMx)
-        
-        spline_points = np.linspace(Zc_id0[0], Zc_id0[-1], 100)
-        
-        # get the mean Xc, Yc for each ID
-        mean_Xc = np.mean(id0_df['Xc'].values * pixel_size)
-        mean_Yc = np.mean(id0_df['Yc'].values * pixel_size)
-        
-        min_coord = np.array([mean_Xc, mean_Yc, spline_min[0]])
-        spline_mins[point_id] = min_coord
-        
-        # fig, ax = plt.subplots()
-        # ax.scatter(Zc_id0, FWHMx)
-        # ax.plot(spline_points, spline_1D(spline_points))
-        # ax.scatter(spline_min[0], spline_min[1], color='r')
-        # ax.set_xlabel('Z')
-        # ax.set_ylabel('FWHMx')
-        # ax.set_title(f'Point ID = {point_id}')
+    # create variables for 3D locations of DAM1, DAM2 and DAM3
+    DAM1 = np.broadcast_to(np.array(DAM_offsets[0]), (len(output_df), 3)).copy()
+    DAM1[:,2] = DAM1[:,2] + output_df['DAM X']
     
-    # print(spline_mins)
-    # # plot the DAM positions in 3D
-    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    # # Plot the DAMX positions
-    # ax.scatter(DAMX[:,0], DAMX[:,1], DAMX[:,2], color='m', label='DAMX', alpha=0.5)
-    # # Plot the DAMY positions
-    # ax.scatter(DAMY[:,0], DAMY[:,1], DAMY[:,2], color='k', label='DAMY', alpha=0.5)
-    # #plot the DAMZ positions
-    # ax.scatter(DAMZ[:,0], DAMZ[:,1], DAMZ[:,2], color='g', label='DAMZ', alpha=0.5)
-    # # plot the fit centres
-    # # ax.scatter(Xc, Yc, Zc, color='b', label='Fit Centres')
-    # ax.scatter(spline_mins[:,2], spline_mins[:,0], spline_mins[:,1], color='r', label='Spline Minima')
-    # ax.set_xlabel('X')
-    # ax.set_ylabel('Y')
-    # ax.set_zlabel('Z')
-    # ax.legend()
-    # plt.show()
+    DAM2 = np.broadcast_to(np.array(DAM_offsets[1]), (len(output_df), 3)).copy()
+    DAM2[:,2] = DAM2[:,2] + output_df['DAM Y']
+    
+    DAM3 = np.broadcast_to(np.array(DAM_offsets[2]), (len(output_df), 3)).copy()
+    DAM3[:,2] = DAM3[:,2] + output_df['DAM Z']
+    
+    
+    # find the minimum of the FWHMx as a function of Z for each DAM
+    IDs, FWHMx_minima = find_minima(output_df[['Xc', 'Yc', 'DAM X']], 
+                                    output_df['FWHMx'], output_df['Point ID'], DAM_stoutlier_f=1.5, 
+                                    minZ_step=0.01)
+    
+    
+    
+    
+    
+    # plot the DAM positions in 3D
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # Plot the DAM1 positions
+    ax.scatter(DAM1[:,0], DAM1[:,1], DAM1[:,2], color='m', label='DAM1', alpha=0.5)
+    # Plot the DAM2 positions
+    ax.scatter(DAM2[:,0], DAM2[:,1], DAM2[:,2], color='k', label='DAM2', alpha=0.5)
+    #plot the DAM3 positions
+    ax.scatter(DAM3[:,0], DAM3[:,1], DAM3[:,2], color='g', label='DAM3', alpha=0.5)
+    # plot the fit centres
+    # ax.scatter(output_df['Xc'], output_df['Yc'], output_df['DAM X'], color='b', label='Fit Centres')
+    ax.scatter(FWHMx_minima[:,0], FWHMx_minima[:,1], FWHMx_minima[:,2], color='r', label='Spline Minima')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend()
+    plt.show()
     
     # fit a plane to the spline minima
-    (A, B, C, D) = plane_fitter(spline_mins)
+    (A, B, C, D) = plane_fitter(FWHMx_minima)
     
     
     # plot the spline mimima and the plane
-    x = np.linspace(np.min(spline_mins[:,0]), np.max(spline_mins[:,0]), 100)
-    y = np.linspace(np.min(spline_mins[:,1]), np.max(spline_mins[:,1]), 100)
+    x = np.linspace(np.min(FWHMx_minima[:,0]), np.max(FWHMx_minima[:,0]), 100)
+    y = np.linspace(np.min(FWHMx_minima[:,1]), np.max(FWHMx_minima[:,1]), 100)
     X, Y = np.meshgrid(x, y)
     Z = (-A * X - B * Y - D) / C
     
-    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    # ax.scatter(spline_mins[:,0], spline_mins[:,1], spline_mins[:,2], color='r', label='Spline Minima')
-    # ax.plot_surface(X, Y, Z, alpha=0.5)
-    # plt.show()
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.scatter(FWHMx_minima[:,0], FWHMx_minima[:,1], FWHMx_minima[:,2], color='r', label='Spline Minima')
+    ax.plot_surface(X, Y, Z, alpha=0.5)
+    plt.show()
     
     
-    # find the intersection of the plane with the DAMX, DAMY and DAMZ axes
-    DAMX_z = find_point_on_plane(A, B, C, D, DAM_offsets[0][1:], missing_coord='z')
-    DAMY_z = find_point_on_plane(A, B, C, D, DAM_offsets[1][1:], missing_coord='z')
-    DAMZ_z = find_point_on_plane(A, B, C, D, DAM_offsets[2][1:], missing_coord='z')
+    # find the intersection of the plane with the DAM1, DAM2 and DAM3 axes
+    DAM1_z = find_point_on_plane(A, B, C, D, DAM_offsets[0][:2], missing_coord='z')
+    DAM2_z = find_point_on_plane(A, B, C, D, DAM_offsets[1][:2], missing_coord='z')
+    DAM3_z = find_point_on_plane(A, B, C, D, DAM_offsets[2][:2], missing_coord='z')
+    
+    
+    # new meshgrid for plotting
+    x = np.linspace(-270, 270, 100)
+    y = np.linspace(-270, 131, 100)
+    X, Y = np.meshgrid(x, y)
+    Z = (-A * X - B * Y - D) / C
+    
+
     
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.scatter(DAMX[:,0], DAMX[:,1], DAMX[:,2], color='m', label='DAMX')
-    # Plot the DAMY positions
-    ax.scatter(DAMY[:,0], DAMY[:,1], DAMY[:,2], color='k', label='DAMY')
-    #plot the DAMZ positions
-    ax.scatter(DAMZ[:,0], DAMZ[:,1], DAMZ[:,2], color='g', label='DAMZ')
-    ax.scatter(DAMX_z, DAMX[:,1], DAMX[:,2], color='b', label='DAMX_z')
-    ax.scatter(DAMY_z, DAMY[:,1], DAMY[:,2], color='b', label='DAMY_z')
-    ax.scatter(DAMZ_z, DAMZ[:,1], DAMZ[:,2], color='b', label='DAMZ_z')
-    ax.scatter(spline_mins[:,2], spline_mins[:,0], spline_mins[:,1], color='r', label='Spline Minima')
+    ax.scatter(DAM1[:,0], DAM1[:,1], DAM1[:,2], color='m', label='DAM1', alpha=0.01)
+    # Plot the DAM2 positions
+    ax.scatter(DAM2[:,0], DAM2[:,1], DAM2[:,2], color='k', label='DAM2', alpha=0.01)
+    #plot the DAM3 positions
+    ax.scatter(DAM3[:,0], DAM3[:,1], DAM3[:,2], color='g', label='DAM3', alpha=0.01)
+    ax.scatter(DAM1[0,0], DAM1[0,1], DAM1_z, color='b', label='DAM1_z')
+    ax.scatter(DAM2[0,0], DAM2[0,1], DAM2_z, color='b', label='DAM2_z')
+    ax.scatter(DAM3[0,0], DAM3[0,1], DAM3_z, color='b', label='DAM3_z')
+    ax.scatter(FWHMx_minima[:,0], FWHMx_minima[:,1], FWHMx_minima[:,2], color='r', label='Spline Minima')
+    #surface plot
+    ax.plot_surface(X, Y, Z, alpha=0.5)
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
 
     plt.show()
-    
-    
-    
-    
-    
-    
-    
 
-    
+    print
 
 if __name__ == "__main__":
     main()
