@@ -161,7 +161,24 @@ def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01,
     plt.show()
         
     return unique_IDs, minima
+
+
+def get_score(df, metric_names, weights):
     
+    # initilise array to hold weighted metrics
+    wmetric_arr = np.zeros((len(df), len(metric_names)))
+    
+    for n, name in enumerate(metric_names):
+        metric = df[name]
+        weight = weights[n]
+        weighted_metric = metric * weight
+        wmetric_arr[:,n] = weighted_metric
+        
+    # sum the weighted metrics
+    score = np.sum(wmetric_arr, axis=1)
+    
+    return score
+
 
 def main():
     # Define the DAM offsets
@@ -206,13 +223,11 @@ def main():
     DAM3 = np.broadcast_to(np.array(DAM_offsets[2]), (len(output_df), 3)).copy()
     DAM3[:,2] = DAM3[:,2] + output_df['DAM Z']
     
-    
+    mixed_score = get_score(output_df, ['FWHMx', 'FWHMy'], [1, 1])
     # find the minimum of the FWHMx as a function of Z for each DAM
     IDs, FWHMx_minima = find_minima(output_df[['Xc', 'Yc', 'DAM X']], 
-                                    output_df['FWHMx'], output_df['Point ID'], DAM_stoutlier_f=1.5, 
+                                    mixed_score, output_df['Point ID'], DAM_stoutlier_f=1.5, 
                                     minZ_step=0.01)
-    
-    
     
     
     
