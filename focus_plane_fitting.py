@@ -97,7 +97,7 @@ def fit_spline(Z, score, k=4, outlier_f=1.5, minZ_step=0.01):
         
     # find the minimum of the spline
     spline_points = np.arange(Z[0], Z[-1], minZ_step/2)
-    spline_min_Z= spline_points[np.argmin(spline_1D(spline_points))]
+    spline_min_Z = spline_points[np.argmin(spline_1D(spline_points))]
     spline_min_score = spline_1D(spline_min_Z)
     
     return spline_1D, (spline_min_Z, spline_min_score)
@@ -121,7 +121,7 @@ def create_subplot_grid(num_plots):
 # write a function which finds the minimum of a score as a function of Z for
 # each box id
 def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01, 
-                score_label='Score'):
+                score_label='Score', limit=None):
     # make sure the arrays are numpy arrays
     coords = np.array(coords)
     score = np.array(score)
@@ -129,28 +129,52 @@ def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01,
     
     # separate the Z and ID values for each box
     unique_IDs = np.unique(ID_arr)
+    
+    # initialise an array to hold the minima
     minima = np.zeros((len(unique_IDs), 3))
+    
+    if limit != None:
+        under_range = np.zeros((len(unique_IDs), 2))
+    
+    # create a square subplot grid
     fig, axes = create_subplot_grid(len(unique_IDs))
     axes = axes.flatten()
+    
+    # for each point ID, find the minimum of the score as a function of Z and
+    # the X and Y coordinates of the minimum
     for n, ID in enumerate(unique_IDs):
         
+        # find the coordinates of the point ID
         coords_id = coords[ID_arr == ID]
         
+        # X and Y min is just the median of the X and Y coordinates
+        # TODO: Check how much the points move in X and Y
         X_id = coords_id[:,0]
         Y_id = coords_id[:,1]
-        
         X_min = np.median(X_id)
         Y_min = np.median(Y_id)
         
+        # Z is found using spline fit
         Z_id = coords_id[:,2]
-        
         score_id = score[ID_arr == ID]
-        
         spline_fit, spline_min = fit_spline(Z_id, score_id, outlier_f=DAM_stoutlier_f, minZ_step=minZ_step)
+        
+        # store the result
         minima[n] = np.array([X_min, Y_min, spline_min[0]])
         
-        spline_points = np.linspace(Z_id[0], Z_id[-1], 100)
-        # sanity check the spline minima
+        spline_points = np.arange(Z_id[0], Z_id[-1], minZ_step/5)
+        
+        # if a limit is given find the range of values of spline points below 
+        # the limit
+        if limit != None:
+            under_limit = spline_points[spline_fit(spline_points) < limit]
+            Z_range_low = np.min(under_limit)
+            Z_range_high = np.max(under_limit)
+            under_range[n] = np.array([Z_range_low, Z_range_high])
+            axes[n].plot(under_limit, spline_fit(under_limit), linewidth=10, color='g')
+            
+        
+        # sanity check the spline minima with a plot
         axes[n].scatter(Z_id, score_id)
         axes[n].plot(spline_points, spline_fit(spline_points))
         axes[n].scatter(spline_min[0], spline_min[1], color='r')
@@ -159,8 +183,12 @@ def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01,
         axes[n].set_title(f'Point ID = {ID}')
     
     plt.show()
-        
-    return unique_IDs, minima
+    
+    if limit != None:
+        return unique_IDs, minima, under_range
+    
+    else:  
+        return unique_IDs, minima
 
 
 def get_score(df, metric_names, weights):
@@ -202,8 +230,8 @@ def main():
     # convert the Xc, Yc, FWHMx and FWHMy to mm
     output_df['Xc'] = output_df['Xc'] * pixel_size
     output_df['Yc'] = output_df['Yc'] * pixel_size
-    output_df['FWHMx'] = output_df['FWHMx'] * pixel_size
-    output_df['FWHMy'] = output_df['FWHMy'] * pixel_size
+    # output_df['FWHMx'] = output_df['FWHMx'] * pixel_size
+    # output_df['FWHMy'] = output_df['FWHMy'] * pixel_size
     
     # rename the columns to reflect unit change
     # output_df.rename(columns={'DAM X': 'DAM X (mm)', 'DAM Y': 'DAM Y (mm)', 'DAM Z': 'DAM Z (mm)'}, inplace=True)
@@ -213,7 +241,7 @@ def main():
     # I will refer to DAM1 as DAM1, DAM2 as DAM2 and DAM3 as DAM3 to avoid
     # variable name confusion
     
-    # create variables for 3D locations of DAM1, DAM2 and DAM3
+    # create variables for 3D locations of DAM1, DAM2 and DAM3 for plotting
     DAM1 = np.broadcast_to(np.array(DAM_offsets[0]), (len(output_df), 3)).copy()
     DAM1[:,2] = DAM1[:,2] + output_df['DAM X']
     
@@ -223,14 +251,33 @@ def main():
     DAM3 = np.broadcast_to(np.array(DAM_offsets[2]), (len(output_df), 3)).copy()
     DAM3[:,2] = DAM3[:,2] + output_df['DAM Z']
     
-    mixed_score = get_score(output_df, ['FWHMx', 'FWHMy'], [1, 1])
+    mixed_score = get_score(output_df, ['FWHMx'], [1])
     # find the minimum of the FWHMx as a function of Z for each DAM
-    IDs, FWHMx_minima = find_minima(output_df[['Xc', 'Yc', 'DAM X']], 
+    IDs, FWHMx_minima, range = find_minima(output_df[['Xc', 'Yc', 'DAM X']], 
                                     mixed_score, output_df['Point ID'], DAM_stoutlier_f=1.5, 
-                                    minZ_step=0.01)
+                                    minZ_step=0.01, limit=3.1)
     
     
+    N_points = 1000
+    range_coords = np.zeros((len(IDs) * N_points, 3))
+    for n, ID in enumerate(IDs):
+        Xc = FWHMx_minima[n,0]
+        Yc = FWHMx_minima[n,1]
+        
+        Z_range = range[n]
+        print(Z_range)
+        Z_full = np.linspace(Z_range[0], Z_range[1], N_points)
+        X_full = np.repeat(Xc, len(Z_full))
+        Y_full = np.repeat(Yc, len(Z_full))
+        in_range_coords = np.vstack((X_full, Y_full, Z_full)).T
+        
+        range_coords[n * N_points:(n+1) * N_points,:] = in_range_coords
+        
+        
+        
     
+        
+        
     # plot the DAM positions in 3D
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
     # Plot the DAM1 positions
@@ -293,10 +340,34 @@ def main():
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
+    
+
+    # fit a plane to the acceptable range of Z values
+    (Ar, Br, Cr, Dr) = plane_fitter(range_coords)
+    # fit a plane to the spline minima
+    (A, B, C, D) = plane_fitter(FWHMx_minima) 
+    
+    x = np.linspace(np.min(FWHMx_minima[:,0]), np.max(FWHMx_minima[:,0]), 100)
+    y = np.linspace(np.min(FWHMx_minima[:,1]), np.max(FWHMx_minima[:,1]), 100)
+    X, Y = np.meshgrid(x, y)
+    Zr = (-Ar * X - Br * Y - Dr) / Cr
+    Z = (-A * X - B * Y - D) / C
+    
+    print(Ar, Br, Cr, Dr)
+    print(A, B, C, D)
+
+    # plot the acceptable range of Z values
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.scatter(range_coords[:,0], range_coords[:,1], range_coords[:,2], color='g', label='Acceptable Range')
+    ax.plot_surface(X, Y, Zr, alpha=0.5)
+    ax.plot_surface(X, Y, Z, alpha=0.5)
 
     plt.show()
+    
+    
+    
 
-    print
+    # plt.show()
 
 if __name__ == "__main__":
     main()
