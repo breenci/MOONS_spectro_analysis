@@ -10,7 +10,9 @@ import glob
 class pointSelectGUI():
     """Matplotlib GUI for point selection"""
     
+    
     def __init__(self, fn_list, point_file=None, DAM_positions=None, box_size=30):
+        # initialize variables
         self.fn_list = fn_list
         self.point_file = point_file
         self.selection = None
@@ -19,22 +21,27 @@ class pointSelectGUI():
         
                 
     def run(self):
-        print("Running GUI", self.fn_list[0])
+        # Read in files
         self.arr_list = read_files(self.fn_list)
+        # Specify current array
         self.current_arr = self.arr_list[0]
         
-        # Create a figure with grid
+        # Create a figure with grid to plot and show GUI components
         self.fig = plt.figure(figsize=(12,8))
         grid = GridSpec(7, 4)
+        # plot the first frame
         imax = self.fig.add_subplot(grid[:5,:3])
         self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=100)
+        # TODO: Add text boxes to specify vmin and vmax
+        # add cursor for easier selection of points
         cursor = Cursor(imax, useblit=True, color='red', linewidth=.5)
         imax.set_aspect('auto')
-        
+        # create a clicker object for point selection
+        # see https://mpl-point-clicker.readthedocs.io/en/latest/ for more info
         self.klicker = clicker(imax, ['Selected Points'], markers=['x'], 
                                colors=['red'], legend_loc='upper center')
         
-        # Load preselected points
+        # Load preselected points if specified
         if self.point_file != None:
             try:
                 preselection = np.loadtxt(self.point_file)
@@ -49,15 +56,15 @@ class pointSelectGUI():
         self.subim = subax.imshow(np.array(np.zeros((self.box_size, self.box_size))), vmin=0, vmax=100)
         # turn off axis
         subax.axis('off')
+        # update the plot whenever a point is added
         self.klicker.on_point_added(self._on_points_changed)      
-        
         
         # add slider for file selection
         # If DAM positions are given, add slider for DAM position selection
         if self.DAM_positions != None:
             DAM_slider_ax = self.fig.add_subplot(grid[5, :])
             DAM_slider = Slider(ax=DAM_slider_ax, valmin=0, valmax=len(self.DAM_positions), valstep=1,
-                                label='DAM')
+                                label='DAM Position')
             DAM_slider.on_changed(self._slider_update)
         
         else:
@@ -77,22 +84,30 @@ class pointSelectGUI():
         bsave.on_clicked(self._save_button_callback)
         plt.show()
     
+    # Callback functions for GUI components
+    # TODO: Add a callback function for the vmin and vmax text boxes
+    # TODO: name the point file
     def _slider_update(self, val):
-        print(self.fn_list[val])
+        """Change the image when the slider is moved"""
         self.im.set_data(self.arr_list[val])
         self.fig.canvas.draw_idle()
         self.current_arr = self.arr_list[val]
-            
+
+
     def _run_button_callback(self, event):
-        self.selection = self.klicker.get_positions()
+        """Close the figure and do final update to postion list"""
         plt.close()
+        self.selection = self.klicker.get_positions()
+        
         
     def _save_button_callback(self, event):
+        """Save the selected points to a file"""
         pos = self.klicker.get_positions()
         np.savetxt('points.txt', pos["Selected Points"])
-        
+
+ 
     def _on_points_changed(self, position, klass):
-        print(f"Point added: {position}")
+        """Update the subimage when a point is added"""
         box = self._get_box(position)
         self.subim.set_data(box)
         self.fig.canvas.draw_idle()

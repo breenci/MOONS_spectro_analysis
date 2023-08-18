@@ -141,9 +141,6 @@ def main():
     # Sample list of filenames
     filenames = glob.glob(args.folder)
     
-    # check if box size is specified. If not, use default value
-
-    print(f"Box size: {args.box_size}")
     # Define the regular expression pattern
     pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
 
@@ -155,10 +152,11 @@ def main():
                                                   column_names=custom_column_names)
     
     # sort the DataFrame by the X column
+    # implications for analysis later?
     extracted_data = extracted_data.sort_values(by="X")
     fn_list = extracted_data['filename'].tolist()
     
-    
+    # create a GUI to select points. Preload the selection if specified
     if args.preload_selection:
         preload_selection = args.preload_selection
         gui = pointSelectGUI(fn_list, point_file=preload_selection, 
@@ -166,34 +164,34 @@ def main():
     else:    
         gui = pointSelectGUI(fn_list, DAM_positions=extracted_data['X'].tolist(), 
                              box_size=args.box_size)
-    
+
     # run the GUI
+    print("Running GUI")
     gui.run()
     # get the selected points
     box_centres = gui.selection['Selected Points']
-    
-    # box start and end points
-    # todo: check this works
-    box_start = box_centres - args.box_size/2
-    
+        
+    # Do dark subtraction if specified
+    # TODO can this be done box loop?
+    print("Extracting boxes for analysis")
     if args.dark:
         # get the boxes around the selected points
-        box_dict, box0 = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
+        box_dict, box_origin = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
                                         box_size=args.box_size, dark=args.dark)
+        print("Dark frame subtracted. Filename: {}".format(args.dark))
     else:
         # get the boxes around the selected points
-        box_dict, box0 = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
+        box_dict, box_origin = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
                                         box_size=args.box_size)
+        print("No dark frame subtracted")
 
-    print(box0)
-    # intialize the gaussian model
-    g2d_model = lmfit.models.Gaussian2dModel()
-    
+    # create an empty dataframe with column names from col_names
+    # for each DAM poistion there are n points
     nDAMpos = len(fn_list)
     n_points = len(box_centres)
-    col_names = ['File', 'Point ID', 'DAM X','DAM Y', 'DAM Z', 'Xc', 'Yc', 'FWHMx', 'FWHMy', 'EE']
-    
-    # create an empty dataframe with column names from col_names
+    col_names = ['File', 'Point ID', 'DAM X (steps)', 'DAM Y (steps)', 
+                 'DAM Z (steps)', 'Xc (pixels)', 'Yc (pixels)', 'FWHMx (pixels)', 
+                 'FWHMy (pixels)', 'EE']
     output_df = pd.DataFrame(columns=col_names, index=range(n_points*nDAMpos))
     
     # intialize the gaussian model
@@ -201,6 +199,7 @@ def main():
     
     counter = 0
     # Loop through each box in each file and fit a 2D Gaussian
+    print("Running analysis")
     for fn in fn_list:
         # get dam position from extracted_data
         DAMx = int(extracted_data.loc[extracted_data['filename'] == fn, 'X'].iloc[0])
@@ -215,8 +214,6 @@ def main():
             flatY = Y.flatten()
             flatbox = box.flatten()
             
-            print(np.shape(box))
-            
             # guess the parameters
             params = g2d_model.guess(flatbox, flatX, flatY)
             
@@ -225,18 +222,21 @@ def main():
             
             FWHMx = fit_result.params['fwhmx'].value
             FWHMy = fit_result.params['fwhmy'].value
-            Xc = fit_result.params['centerx'].value + box0[counter,0]
-            Yc = fit_result.params['centery'].value + box0[counter,1]
+            Xc = fit_result.params['centerx'].value + box_origin[counter,0]
+            Yc = fit_result.params['centery'].value + box_origin[counter,1]
             
+            # encircled energy calculation
             EE = encircled(box, [3,7], [Xc,Yc])
             
+            # save the results to the dataframe
             output_df.loc[counter] = [fn, box_counter, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE]
             box_counter += 1
             counter += 1
-    
+    print("Analysis complete")
     
     # save the dataframe to a csv file
-    output_df.to_csv('output.csv', index=False)
+    # TODO filename should incorporate the test ID
+    # output_df.to_csv('output.csv', index=False)
 
 
     # ---------------------------------------------------------------------
@@ -244,6 +244,7 @@ def main():
     # ---------------------------------------------------------------------
     
     # plot the each box with the fitted gaussian
+    # TODO plot the boxes in a grid
     ncols = 5
     nboxes = len(box_dict[fn_list[0]])
     nrows = int(np.ceil(nboxes/ncols))
