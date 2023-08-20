@@ -193,6 +193,7 @@ def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01,
 
 def get_score(df, metric_names, weights):
     
+    # TODO Normalise the metric values
     # initilise array to hold weighted metrics
     wmetric_arr = np.zeros((len(df), len(metric_names)))
     
@@ -251,11 +252,21 @@ def main():
     DAM3 = np.broadcast_to(np.array(DAM_offsets[2]), (len(output_df), 3)).copy()
     DAM3[:,2] = DAM3[:,2] + output_df['DAM Z']
     
+    # Fit a plane to the DAM1, DAM2 and DAM3 positions
+    (A, B, C, D) = find_plane(DAM1, DAM2, DAM3)
+    
+    Zc = (-A * output_df['Xc'] - B * output_df['Yc'] - D) / C
+    Zc = find_point_on_plane(A, B, C, D, [output_df['Xc'], output_df['Yc']], missing_coord='z')
+    
+    print(Zc)
     mixed_score = get_score(output_df, ['FWHMx'], [1])
+    
+    coords = np.vstack((output_df['Xc'], output_df['Yc'], Zc)).T
     # find the minimum of the FWHMx as a function of Z for each DAM
-    IDs, FWHMx_minima, range = find_minima(output_df[['Xc', 'Yc', 'DAM X']], 
+    IDs, FWHMx_minima, range = find_minima(coords, 
                                     mixed_score, output_df['Point ID'], DAM_stoutlier_f=1.5, 
                                     minZ_step=0.01, limit=3.1)
+    
     
     
     N_points = 1000
@@ -265,7 +276,6 @@ def main():
         Yc = FWHMx_minima[n,1]
         
         Z_range = range[n]
-        print(Z_range)
         Z_full = np.linspace(Z_range[0], Z_range[1], N_points)
         X_full = np.repeat(Xc, len(Z_full))
         Y_full = np.repeat(Yc, len(Z_full))
@@ -276,8 +286,7 @@ def main():
         
         
     
-        
-        
+    
     # plot the DAM positions in 3D
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
     # Plot the DAM1 positions
@@ -364,10 +373,6 @@ def main():
 
     plt.show()
     
-    
-    
-
-    # plt.show()
 
 if __name__ == "__main__":
     main()
