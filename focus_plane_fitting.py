@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.interpolate import UnivariateSpline
 import math
+import argparse
 
 
 def find_plane(p1, p2, p3):
@@ -181,6 +182,7 @@ def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01,
         axes[n].set_xlabel('Z')
         axes[n].set_ylabel(score_label)
         axes[n].set_title(f'Point ID = {ID}')
+        fig.suptitle(f'{score_label}')
     
     plt.show()
     
@@ -198,7 +200,7 @@ def get_score(df, metric_names, weights):
     wmetric_arr = np.zeros((len(df), len(metric_names)))
     
     for n, name in enumerate(metric_names):
-        metric = df[name]
+        metric = df[name]/np.min(df[name])
         weight = weights[n]
         weighted_metric = metric * weight
         wmetric_arr[:,n] = weighted_metric
@@ -221,21 +223,26 @@ def main():
     DAM_step_size = 0.01 # 10 micron steps
     
     # read in the output file
-    output_df = pd.read_csv('output.csv')
+    # read in input arguments
+    parser = argparse.ArgumentParser(description='Find the best focus plane of a set of images')
+    
+    parser.add_argument('input_file', type=str, help='The input file containing the DAM positions')
+    parser.add_argument('--metrics', type=str, nargs='+', help='The names of the metrics to use')
+    parser.add_argument('--weights', type=int, nargs='+', help='The weights of the metrics to use in the mixed score')
+
+    args = parser.parse_args()
+    
+    metrics_df = pd.read_csv(args.input_file)
     
     # convert the DAM positions to mm
-    output_df['DAM X'] = output_df['DAM X'] * DAM_step_size
-    output_df['DAM Y'] = output_df['DAM Y'] * DAM_step_size
-    output_df['DAM Z'] = output_df['DAM Z'] * DAM_step_size
+    metrics_df['DAM X'] = metrics_df['DAM X'] * DAM_step_size
+    metrics_df['DAM Y'] = metrics_df['DAM Y'] * DAM_step_size
+    metrics_df['DAM Z'] = metrics_df['DAM Z'] * DAM_step_size
     
-    # convert the Xc, Yc, FWHMx and FWHMy to mm
-    output_df['Xc'] = output_df['Xc'] * pixel_size
-    output_df['Yc'] = output_df['Yc'] * pixel_size
-    # output_df['FWHMx'] = output_df['FWHMx'] * pixel_size
-    # output_df['FWHMy'] = output_df['FWHMy'] * pixel_size
-    
-    # rename the columns to reflect unit change
-    # output_df.rename(columns={'DAM X': 'DAM X (mm)', 'DAM Y': 'DAM Y (mm)', 'DAM Z': 'DAM Z (mm)'}, inplace=True)
+    # convert the Xc, Yc to mm
+    metrics_df['Xc'] = metrics_df['Xc'] * pixel_size
+    metrics_df['Yc'] = metrics_df['Yc'] * pixel_size
+
     
     # confusingly the individual DAMS are labelled DAM1, DAM2 and DAM3
     # These are three DAMs with individually each have an XYZ position
@@ -243,45 +250,71 @@ def main():
     # variable name confusion
     
     # create variables for 3D locations of DAM1, DAM2 and DAM3 for plotting
-    DAM1 = np.broadcast_to(np.array(DAM_offsets[0]), (len(output_df), 3)).copy()
-    DAM1[:,2] = DAM1[:,2] + output_df['DAM X']
+    DAM1 = np.broadcast_to(np.array(DAM_offsets[0]), (len(metrics_df), 3)).copy()
+    DAM1[:,2] = DAM1[:,2] + metrics_df['DAM X']
     
-    DAM2 = np.broadcast_to(np.array(DAM_offsets[1]), (len(output_df), 3)).copy()
-    DAM2[:,2] = DAM2[:,2] + output_df['DAM Y']
+    DAM2 = np.broadcast_to(np.array(DAM_offsets[1]), (len(metrics_df), 3)).copy()
+    DAM2[:,2] = DAM2[:,2] + metrics_df['DAM Y']
     
-    DAM3 = np.broadcast_to(np.array(DAM_offsets[2]), (len(output_df), 3)).copy()
-    DAM3[:,2] = DAM3[:,2] + output_df['DAM Z']
+    DAM3 = np.broadcast_to(np.array(DAM_offsets[2]), (len(metrics_df), 3)).copy()
+    DAM3[:,2] = DAM3[:,2] + metrics_df['DAM Z']
     
     # Fit a plane to the DAM1, DAM2 and DAM3 positions
     (A, B, C, D) = find_plane(DAM1, DAM2, DAM3)
     
-    Zc = (-A * output_df['Xc'] - B * output_df['Yc'] - D) / C
-    Zc = find_point_on_plane(A, B, C, D, [output_df['Xc'], output_df['Yc']], missing_coord='z')
+    Zc = find_point_on_plane(A, B, C, D, [metrics_df['Xc'], metrics_df['Yc']], missing_coord='z')
+    coords = np.vstack((metrics_df['Xc'], metrics_df['Yc'], Zc)).T
+
+    mixed_score = get_score(metrics_df, args.metrics, args.weights)
     
-    print(Zc)
-    mixed_score = get_score(output_df, ['FWHMx'], [1])
-    
-    coords = np.vstack((output_df['Xc'], output_df['Yc'], Zc)).T
-    # find the minimum of the FWHMx as a function of Z for each DAM
-    IDs, FWHMx_minima, range = find_minima(coords, 
-                                    mixed_score, output_df['Point ID'], DAM_stoutlier_f=1.5, 
-                                    minZ_step=0.01, limit=3.1)
-    
-    
-    
-    N_points = 1000
-    range_coords = np.zeros((len(IDs) * N_points, 3))
-    for n, ID in enumerate(IDs):
-        Xc = FWHMx_minima[n,0]
-        Yc = FWHMx_minima[n,1]
+    # For each metric, find the minimum of the metric as a function of Z
+    # Also find the minimum of the a weighted sum of the metrics as a function
+    # of Z
+    for n, metric in enumerate(args.metrics):
+        # find the minimum of the metric as a function of Z
+        IDs, minima = find_minima(coords, metrics_df[metric], metrics_df['Point ID'], 
+                                  DAM_stoutlier_f=1.5, minZ_step=0.01, score_label=metric)
         
-        Z_range = range[n]
-        Z_full = np.linspace(Z_range[0], Z_range[1], N_points)
-        X_full = np.repeat(Xc, len(Z_full))
-        Y_full = np.repeat(Yc, len(Z_full))
-        in_range_coords = np.vstack((X_full, Y_full, Z_full)).T
+        # fit a plane to the spline minima
+        (A, B, C, D) = plane_fitter(minima)
         
-        range_coords[n * N_points:(n+1) * N_points,:] = in_range_coords
+        DAM1_z = find_point_on_plane(A, B, C, D, DAM_offsets[0][:2], missing_coord='z')
+        DAM2_z = find_point_on_plane(A, B, C, D, DAM_offsets[1][:2], missing_coord='z')
+        DAM3_z = find_point_on_plane(A, B, C, D, DAM_offsets[2][:2], missing_coord='z')
+        
+        print(f'{metric}: DAM1 = {DAM1_z} DAM2 = {DAM2_z} DAM3 = {DAM3_z}')
+        
+        
+    # find the minimum of the weighted sum of metrics as a function of Z for
+    # each DAM
+    score_IDs, score_minima = find_minima(coords, mixed_score, metrics_df['Point ID'], 
+                                           DAM_stoutlier_f=1.5, minZ_step=0.01,
+                                           score_label='Mixed Score')
+
+    (A, B, C, D) = plane_fitter(score_minima)
+        
+    DAM1_z = find_point_on_plane(A, B, C, D, DAM_offsets[0][:2], missing_coord='z')
+    DAM2_z = find_point_on_plane(A, B, C, D, DAM_offsets[1][:2], missing_coord='z')
+    DAM3_z = find_point_on_plane(A, B, C, D, DAM_offsets[2][:2], missing_coord='z')
+    
+    print(f'Score: DAM1 = {DAM1_z} DAM2 = {DAM2_z} DAM3 = {DAM3_z}')
+        
+    
+    
+    
+    # N_points = 1000
+    # range_coords = np.zeros((len(IDs) * N_points, 3))
+    # for n, ID in enumerate(IDs):
+    #     Xc = score_minima[n,0]
+    #     Yc = score_minima[n,1]
+        
+    #     Z_range = range[n]
+    #     Z_full = np.linspace(Z_range[0], Z_range[1], N_points)
+    #     X_full = np.repeat(Xc, len(Z_full))
+    #     Y_full = np.repeat(Yc, len(Z_full))
+    #     in_range_coords = np.vstack((X_full, Y_full, Z_full)).T
+        
+    #     range_coords[n * N_points:(n+1) * N_points,:] = in_range_coords
         
         
         
@@ -296,26 +329,24 @@ def main():
     #plot the DAM3 positions
     ax.scatter(DAM3[:,0], DAM3[:,1], DAM3[:,2], color='g', label='DAM3', alpha=0.5)
     # plot the fit centres
-    # ax.scatter(output_df['Xc'], output_df['Yc'], output_df['DAM X'], color='b', label='Fit Centres')
-    ax.scatter(FWHMx_minima[:,0], FWHMx_minima[:,1], FWHMx_minima[:,2], color='r', label='Spline Minima')
+    # ax.scatter(metrics_df['Xc'], metrics_df['Yc'], metrics_df['DAM X'], color='b', label='Fit Centres')
+    ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.legend()
     plt.show()
-    
-    # fit a plane to the spline minima
-    (A, B, C, D) = plane_fitter(FWHMx_minima)
+
     
     
     # plot the spline mimima and the plane
-    x = np.linspace(np.min(FWHMx_minima[:,0]), np.max(FWHMx_minima[:,0]), 100)
-    y = np.linspace(np.min(FWHMx_minima[:,1]), np.max(FWHMx_minima[:,1]), 100)
+    x = np.linspace(np.min(score_minima[:,0]), np.max(score_minima[:,0]), 100)
+    y = np.linspace(np.min(score_minima[:,1]), np.max(score_minima[:,1]), 100)
     X, Y = np.meshgrid(x, y)
     Z = (-A * X - B * Y - D) / C
     
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.scatter(FWHMx_minima[:,0], FWHMx_minima[:,1], FWHMx_minima[:,2], color='r', label='Spline Minima')
+    ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
     ax.plot_surface(X, Y, Z, alpha=0.5)
     plt.show()
     
@@ -333,7 +364,6 @@ def main():
     Z = (-A * X - B * Y - D) / C
     
 
-    
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
     ax.scatter(DAM1[:,0], DAM1[:,1], DAM1[:,2], color='m', label='DAM1', alpha=0.01)
     # Plot the DAM2 positions
@@ -343,37 +373,16 @@ def main():
     ax.scatter(DAM1[0,0], DAM1[0,1], DAM1_z, color='b', label='DAM1_z')
     ax.scatter(DAM2[0,0], DAM2[0,1], DAM2_z, color='b', label='DAM2_z')
     ax.scatter(DAM3[0,0], DAM3[0,1], DAM3_z, color='b', label='DAM3_z')
-    ax.scatter(FWHMx_minima[:,0], FWHMx_minima[:,1], FWHMx_minima[:,2], color='r', label='Spline Minima')
+    ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
     #surface plot
     ax.plot_surface(X, Y, Z, alpha=0.5)
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     
-
-    # fit a plane to the acceptable range of Z values
-    (Ar, Br, Cr, Dr) = plane_fitter(range_coords)
-    # fit a plane to the spline minima
-    (A, B, C, D) = plane_fitter(FWHMx_minima) 
-    
-    x = np.linspace(np.min(FWHMx_minima[:,0]), np.max(FWHMx_minima[:,0]), 100)
-    y = np.linspace(np.min(FWHMx_minima[:,1]), np.max(FWHMx_minima[:,1]), 100)
-    X, Y = np.meshgrid(x, y)
-    Zr = (-Ar * X - Br * Y - Dr) / Cr
-    Z = (-A * X - B * Y - D) / C
-    
-    print(Ar, Br, Cr, Dr)
-    print(A, B, C, D)
-
-    # plot the acceptable range of Z values
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.scatter(range_coords[:,0], range_coords[:,1], range_coords[:,2], color='g', label='Acceptable Range')
-    ax.plot_surface(X, Y, Zr, alpha=0.5)
-    ax.plot_surface(X, Y, Z, alpha=0.5)
-
     plt.show()
     
-
+    
 if __name__ == "__main__":
     main()
 
