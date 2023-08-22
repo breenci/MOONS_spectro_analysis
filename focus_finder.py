@@ -7,6 +7,9 @@ import re
 from focus_finder_gui import pointSelectGUI
 import lmfit
 import argparse
+from matplotlib.backends.backend_pdf import PdfPages
+import os
+
 
 
 def extract_variables_and_export(filenames, pattern, column_names=None):
@@ -109,18 +112,28 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
             box, box0 = get_box(data, x, y, box_size=box_size)
             boxes.append(box)
             box0s.append(box0)
-            print(n)
             n += 1
         result[filename] = boxes
         
     return result, np.array(box0s)
 
-
-def encircled(arr,rings,cens):
-    centre = np.sum(arr[int(cens[1])-rings[0]:int(cens[1])+rings[0]+1,int(cens[0])-rings[0]:int(cens[0])+rings[0]+1])
-    outer  = np.sum(arr[int(cens[1])-rings[1]:int(cens[1])+rings[1]+1,int(cens[0])-rings[1]:int(cens[0])+rings[1]+1]) 
-
-    return(centre/outer)
+# TODO fix this function to calculate encircled energy
+def ensquared(array, radius, center):
+    """
+    Calculate the ensquared energy of a 2D array.
+    
+    :param array: 2D array.
+    :param radius: Radii of the aperture.
+    :param center: Center of the aperture.
+    :return: Ensquared energy.
+    """
+    outer_box,_ = get_box(array, center[0], center[1], box_size=radius[0])
+    inner_box,_ = get_box(array, center[0], center[1], box_size=radius[1])
+    
+    print(outer_box.shape, inner_box.shape)
+    
+    return 1 - np.sum(inner_box)/np.sum(outer_box)
+    
 
 
 def main():
@@ -141,6 +154,9 @@ def main():
     # Sample list of filenames
     filenames = glob.glob(args.folder)
     
+    # TODO looks like this information will not be in filename. Will likely need
+    # to extract from template obd file. WT to provide this?
+    # ---------------------------------------------------------------------
     # Define the regular expression pattern
     pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
 
@@ -150,6 +166,7 @@ def main():
     # Call the function and get the extracted variables as a Pandas DataFrame
     extracted_data = extract_variables_and_export(filenames, pattern, 
                                                   column_names=custom_column_names)
+    # ---------------------------------------------------------------------
     
     # sort the DataFrame by the X column
     # implications for analysis later?
@@ -172,7 +189,8 @@ def main():
     box_centres = gui.selection['Selected Points']
         
     # Do dark subtraction if specified
-    # TODO can this be done box loop?
+    # TODO can this be done in box loop? Potentially faster (?) but might make 
+    # plotting more difficult
     print("Extracting boxes for analysis")
     if args.dark:
         # get the boxes around the selected points
@@ -189,9 +207,8 @@ def main():
     # for each DAM poistion there are n points
     nDAMpos = len(fn_list)
     n_points = len(box_centres)
-    col_names = ['File', 'Point ID', 'DAM X (steps)', 'DAM Y (steps)', 
-                 'DAM Z (steps)', 'Xc (pixels)', 'Yc (pixels)', 'FWHMx (pixels)', 
-                 'FWHMy (pixels)', 'EE']
+    col_names = ['File', 'Point ID', 'DAM X', 'DAM Y', 'DAM Z', 'Xc', 'Yc', 
+                 'FWHMx', 'FWHMy', 'EE']
     output_df = pd.DataFrame(columns=col_names, index=range(n_points*nDAMpos))
     
     # intialize the gaussian model
@@ -226,7 +243,7 @@ def main():
             Yc = fit_result.params['centery'].value + box_origin[counter,1]
             
             # encircled energy calculation
-            EE = encircled(box, [3,7], [Xc,Yc])
+            EE = ensquared(box, [5, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
             
             # save the results to the dataframe
             output_df.loc[counter] = [fn, box_counter, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE]
@@ -235,35 +252,40 @@ def main():
     print("Analysis complete")
     
     # save the dataframe to a csv file
-    # TODO filename should incorporate the test ID
-    # output_df.to_csv('output.csv', index=False)
+    test_name = 'placeholder_test_name'
+    output_df.to_csv(test_name + 'output.csv', index=False)
 
 
     # ---------------------------------------------------------------------
     # Plotting
-    # ---------------------------------------------------------------------
     
     # plot the each box with the fitted gaussian
-    # TODO plot the boxes in a grid
-    ncols = 5
-    nboxes = len(box_dict[fn_list[0]])
-    nrows = int(np.ceil(nboxes/ncols))
+    # TODO add a ellipse around the FWHM
+    # TODO add pixel coordinates a titles for each subplot
+    pdf_filename = test_name + 'boxes.pdf'
+    num_cols = 2
     
-    print(nrows, ncols, nboxes)
-    
-    output1_df = output_df.loc[output_df['File'] == fn_list[0]]
-    
-    # for each entry in output1_df, plot the box which corresponds to the first file
-    # and over plot the fitted gaussian parameters from output1_df
-    # fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15,15))
-    # flat_axes = axes.flatten()
-    # for i in range(len(box_centres)):
-    #     flat_axes[i].imshow(box_dict[fn_list[0]][i])
-    #     flat_axes[i].scatter(output1_df['Xc'].iloc[i], output1_df['Yc'].iloc[i], color='r')
-    # plt.show()
+    with PdfPages(pdf_filename) as pdf:
+            for filename, arrays in box_dict.items():
+                num_arrays = len(arrays)
+                num_rows = int(np.ceil(num_arrays // num_cols))
+                fig, axes = plt.subplots(num_rows, num_cols, figsize=(5 * num_cols, 3 * num_rows))
+                plt.subplots_adjust(hspace=0.5)
+                
+                point_info = output_df[output_df['File'] == filename]
+                for i, ax in enumerate(axes.flatten()):
+                    if i < num_arrays:
+                        ax.imshow(arrays[i])
+                        ax.scatter(point_info['Xc'].iloc[i] - box_origin[i, 0], 
+                                   point_info['Yc'].iloc[i] - box_origin[i, 1],
+                                   color='r',s=10)
+                    ax.axis('off')
+                
+                plt.suptitle(os.path.basename(filename))
+                plt.tight_layout()
+                pdf.savefig()
+                plt.close()
         
-    
-
 
 if __name__ == "__main__":
     main()
