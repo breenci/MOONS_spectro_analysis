@@ -1,7 +1,7 @@
 from mpl_point_clicker import clicker
 import matplotlib.pyplot as plt
 from astropy.io import fits
-from matplotlib.widgets import Cursor, Slider, Button, CheckButtons
+from matplotlib.widgets import Cursor, Slider, Button, TextBox
 from matplotlib.gridspec import GridSpec
 import numpy as np
 import glob
@@ -32,15 +32,14 @@ class pointSelectGUI():
         # plot the first frame
         imax = self.fig.add_subplot(grid[:5,:3])
         self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=100)
-        # TODO: Add text boxes to specify vmin and vmax
         # add cursor for easier selection of points
         cursor = Cursor(imax, useblit=True, color='red', linewidth=.5)
         imax.set_aspect('auto')
         # create a clicker object for point selection
         # see https://mpl-point-clicker.readthedocs.io/en/latest/ for more info
         self.klicker = clicker(imax, ['Selected Points'], markers=['x'], 
-                               colors=['red'], legend_loc='upper center')
-        
+                               colors=['red'])
+
         # Load preselected points if specified
         if self.point_file != None:
             try:
@@ -52,7 +51,7 @@ class pointSelectGUI():
                 print(f"Error message: {e}")
         
         # add a subplot to show most recent point
-        subax = self.fig.add_subplot(grid[:5, 3])
+        subax = self.fig.add_subplot(grid[1:4, 3])
         self.subim = subax.imshow(np.array(np.zeros((self.box_size, self.box_size))), vmin=0, vmax=100)
         # turn off axis
         subax.axis('off')
@@ -82,10 +81,10 @@ class pointSelectGUI():
         bax = self.fig.add_subplot(grid[6, 3])
         bsave = Button(bax, 'Save Points')
         bsave.on_clicked(self._save_button_callback)
+        
         plt.show()
     
     # Callback functions for GUI components
-    # TODO: Add a callback function for the vmin and vmax text boxes
     # TODO: name the point file
     def _slider_update(self, val):
         """Change the image when the slider is moved"""
