@@ -147,6 +147,8 @@ def main():
     parser.add_argument("-b", "--box_size", type=int, default=30, help="Size of the box around each point")
     parser.add_argument("-p", "--preload_selection", help="File containing preloaded selection")
     parser.add_argument("-d", "--dark", help="Dark frame to subtract from the data")
+    # add an optional argument to specify a vmin and vmax for the images
+    parser.add_argument("-v", "--cmap_range", nargs=2, type=int, help='Min and max values for colormap') 
     
     # parse the arguments
     args = parser.parse_args()
@@ -177,13 +179,15 @@ def main():
     if args.preload_selection:
         preload_selection = args.preload_selection
         gui = pointSelectGUI(fn_list, point_file=preload_selection, 
-                             DAM_positions=extracted_data['X'].tolist(), box_size=args.box_size)
+                             DAM_positions=extracted_data['X'].tolist(), box_size=args.box_size,
+                             vmin=args.cmap_range[0], vmax=args.cmap_range[1])
     else:    
         gui = pointSelectGUI(fn_list, DAM_positions=extracted_data['X'].tolist(), 
-                             box_size=args.box_size)
+                             box_size=args.box_size, vmin=args.cmap_range[0], 
+                             vmax=args.cmap_range[1])
 
     # run the GUI
-    print("Running GUI")
+    print("Running GUI..")
     gui.run()
     # get the selected points
     box_centres = gui.selection['Selected Points']
@@ -191,7 +195,7 @@ def main():
     # Do dark subtraction if specified
     # TODO can this be done in box loop? Potentially faster (?) but might make 
     # plotting more difficult
-    print("Extracting boxes for analysis")
+    print("Extracting boxes for analysis...")
     if args.dark:
         # get the boxes around the selected points
         box_dict, box_origin = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 

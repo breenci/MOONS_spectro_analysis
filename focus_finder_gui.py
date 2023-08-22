@@ -6,18 +6,23 @@ from matplotlib.gridspec import GridSpec
 import numpy as np
 import glob
 
+import matplotlib
+matplotlib.use('TkAgg')
 
 class pointSelectGUI():
     """Matplotlib GUI for point selection"""
     
     
-    def __init__(self, fn_list, point_file=None, DAM_positions=None, box_size=30):
+    def __init__(self, fn_list, point_file=None, DAM_positions=None, box_size=30,
+                 vmin=0, vmax=100):
         # initialize variables
         self.fn_list = fn_list
         self.point_file = point_file
         self.selection = None
         self.DAM_positions = DAM_positions
         self.box_size = box_size
+        self.vmin = vmin
+        self.vmax = vmax
         
                 
     def run(self):
@@ -31,7 +36,7 @@ class pointSelectGUI():
         grid = GridSpec(7, 4)
         # plot the first frame
         imax = self.fig.add_subplot(grid[:5,:3])
-        self.im = imax.imshow(self.arr_list[0], vmin=0, vmax=100)
+        self.im = imax.imshow(self.arr_list[0], vmin=self.vmin, vmax=self.vmax)
         # add cursor for easier selection of points
         cursor = Cursor(imax, useblit=True, color='red', linewidth=.5)
         imax.set_aspect('auto')
@@ -52,7 +57,8 @@ class pointSelectGUI():
         
         # add a subplot to show most recent point
         subax = self.fig.add_subplot(grid[1:4, 3])
-        self.subim = subax.imshow(np.array(np.zeros((self.box_size, self.box_size))), vmin=0, vmax=100)
+        self.subim = subax.imshow(np.array(np.zeros((self.box_size, self.box_size))), 
+                                  vmin=self.vmin, vmax=self.vmax)
         # turn off axis
         subax.axis('off')
         # update the plot whenever a point is added
@@ -81,7 +87,6 @@ class pointSelectGUI():
         bax = self.fig.add_subplot(grid[6, 3])
         bsave = Button(bax, 'Save Points')
         bsave.on_clicked(self._save_button_callback)
-        
         plt.show()
     
     # Callback functions for GUI components
