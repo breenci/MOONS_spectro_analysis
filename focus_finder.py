@@ -117,7 +117,7 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
         
     return result, np.array(box0s)
 
-# TODO fix this function to calculate encircled energy
+
 def ensquared(array, radius, center):
     """
     Calculate the ensquared energy of a 2D array.
@@ -129,9 +129,7 @@ def ensquared(array, radius, center):
     """
     outer_box,_ = get_box(array, center[0], center[1], box_size=radius[0])
     inner_box,_ = get_box(array, center[0], center[1], box_size=radius[1])
-    
-    print(outer_box.shape, inner_box.shape)
-    
+        
     return 1 - np.sum(inner_box)/np.sum(outer_box)
     
 
@@ -187,7 +185,7 @@ def main():
                              vmax=args.cmap_range[1])
 
     # run the GUI
-    print("Running GUI..")
+    print("Running GUI...")
     gui.run()
     # get the selected points
     box_centres = gui.selection['Selected Points']
@@ -200,6 +198,7 @@ def main():
         # get the boxes around the selected points
         box_dict, box_origin = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
                                         box_size=args.box_size, dark=args.dark)
+        print("Box extraction complete")
         print("Dark frame subtracted. Filename: {}".format(args.dark))
     else:
         # get the boxes around the selected points
@@ -220,7 +219,7 @@ def main():
     
     counter = 0
     # Loop through each box in each file and fit a 2D Gaussian
-    print("Running analysis")
+    print("Running analysis...")
     for fn in fn_list:
         # get dam position from extracted_data
         DAMx = int(extracted_data.loc[extracted_data['filename'] == fn, 'X'].iloc[0])
@@ -259,7 +258,7 @@ def main():
     test_name = 'placeholder_test_name'
     output_df.to_csv(test_name + 'output.csv', index=False)
 
-
+    print("Saving plots...")
     # ---------------------------------------------------------------------
     # Plotting
     
@@ -290,7 +289,7 @@ def main():
                 pdf.savefig()
                 plt.close()
         
-
+    print("Plots saved to {}".format(pdf_filename))
 if __name__ == "__main__":
     main()
 
