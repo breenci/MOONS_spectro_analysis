@@ -24,7 +24,7 @@ class pointSelectGUI():
         
                 
     def run(self):
-        # Read in files
+        # Read in filescommit
         self.arr_list = read_files(self.fn_list)
         # Specify current array
         self.current_arr = self.arr_list[0]
@@ -34,9 +34,8 @@ class pointSelectGUI():
         grid = GridSpec(7, 4)
         # plot the first frame
         imax = self.fig.add_subplot(grid[:5,:3])
-        # self.im = imax.imshow(self.arr_list[0], vmin=self.vmin, vmax=self.vmax, 
-        #                       origin='lower')
-        self.im = imax.pcolormesh(self.arr_list[0], vmin=self.vmin, vmax=self.vmax)
+        self.im = imax.imshow(self.arr_list[0], vmin=self.vmin, vmax=self.vmax, 
+                              origin='lower')
         # add cursor for easier selection of points
         cursor = Cursor(imax, useblit=True, color='red', linewidth=.5)
         imax.set_aspect('auto')
