@@ -81,18 +81,16 @@ def find_point_on_plane(A, B, C, D, known_coords, missing_coord='z'):
 # write a function which takes Z and a score as input and fits a spline to the
 # score. Then find the Z value at the minimum of the spline over the range of Z
 # if there are any outliers, remove them and refit the spline
-def fit_spline(Z, score, k=5, outlier_f=1000000, minZ_step=0.01):
+def fit_spline(Z, score, k=5, outlier_f=5, minZ_step=0.01):
     
     # fit the spline
     spline_1D = UnivariateSpline(Z, score, k=k)
     
     # outlier removal using residual
     residual = score - spline_1D(Z)
-    print(residual)
     # find the outliers
     outliers_mask = np.abs(residual) > (outlier_f * np.std(residual)) + np.mean(residual)
     # remove the outliers present and refit the spline
-    # TODO plot the outliers separately with different marker
     if outliers_mask.sum() > 0:
         Z = Z[~outliers_mask]
         score = score[~outliers_mask]
