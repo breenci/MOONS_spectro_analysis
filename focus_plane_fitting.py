@@ -91,6 +91,7 @@ def fit_spline(Z, score, k=4, outlier_f=1.5, minZ_step=0.01):
     # find the outliers
     outliers_mask = np.abs(residual) > outlier_f * np.std(residual)
     # remove the outliers present and refit the spline
+    # TODO plot the outliers separately with different marker
     if outliers_mask.sum() > 0:
         Z = Z[~outliers_mask]
         score = score[~outliers_mask]
@@ -195,7 +196,6 @@ def find_minima(coords, score, ID_arr, DAM_stoutlier_f=1.5, minZ_step=0.01,
 
 def get_score(df, metric_names, weights):
     
-    # TODO Normalise the metric values
     # initilise array to hold weighted metrics
     wmetric_arr = np.zeros((len(df), len(metric_names)))
     
@@ -222,6 +222,12 @@ def main():
     pixel_size = 0.015 #15 micron pixels
     DAM_step_size = 0.01 # 10 micron steps
     
+    # DAM offsets are measured from centre pixel of the detector. Need to
+    # accoubt for this
+    array_centre = np.array([2047, 2047])
+    array_centre_mm = array_centre * pixel_size
+    
+    
     # read in the output file
     # read in input arguments
     parser = argparse.ArgumentParser(description='Find the best focus plane of a set of images')
@@ -240,8 +246,8 @@ def main():
     metrics_df['DAM Z'] = metrics_df['DAM Z'] * DAM_step_size
     
     # convert the Xc, Yc to mm
-    metrics_df['Xc'] = metrics_df['Xc'] * pixel_size
-    metrics_df['Yc'] = metrics_df['Yc'] * pixel_size
+    metrics_df['Xc'] = metrics_df['Xc'] * pixel_size - array_centre_mm[0]
+    metrics_df['Yc'] = metrics_df['Yc'] * pixel_size - array_centre_mm[1]
 
     
     # confusingly the individual DAMS are labelled DAM1, DAM2 and DAM3

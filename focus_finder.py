@@ -198,6 +198,8 @@ def main():
         # get the boxes around the selected points
         box_dict, box_origin = get_boxes_from_files(fn_list, box_centres[:,0], box_centres[:,1], 
                                         box_size=args.box_size, dark=args.dark)
+        
+        # this is the box origin in row, column format
         print("Box extraction complete")
         print("Dark frame subtracted. Filename: {}".format(args.dark))
     else:
@@ -211,7 +213,7 @@ def main():
     nDAMpos = len(fn_list)
     n_points = len(box_centres)
     col_names = ['File', 'Point ID', 'DAM X', 'DAM Y', 'DAM Z', 'Xc', 'Yc', 
-                 'FWHMx', 'FWHMy', 'EE']
+                 'FWHMx', 'FWHMy', 'EE_fixed']
     output_df = pd.DataFrame(columns=col_names, index=range(n_points*nDAMpos))
     
     # intialize the gaussian model
@@ -242,14 +244,17 @@ def main():
             
             FWHMx = fit_result.params['fwhmx'].value
             FWHMy = fit_result.params['fwhmy'].value
-            Xc = fit_result.params['centerx'].value + box_origin[counter,0]
-            Yc = fit_result.params['centery'].value + box_origin[counter,1]
+            Xc = fit_result.params['centerx'].value + box_origin[counter,1]
+            Yc = fit_result.params['centery'].value + box_origin[counter,0]
+            
+            FWHM_mean = (FWHMx + FWHMy)/2
+            FWHM_discrete = int(np.ceil(FWHM_mean))
             
             # encircled energy calculation
-            EE = ensquared(box, [5, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
+            EE_fixed = ensquared(box, [8, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
             
             # save the results to the dataframe
-            output_df.loc[counter] = [fn, box_counter, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE]
+            output_df.loc[counter] = [fn, box_counter, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE_fixed]
             box_counter += 1
             counter += 1
     print("Analysis complete")
@@ -279,8 +284,9 @@ def main():
                 for i, ax in enumerate(axes.flatten()):
                     if i < num_arrays:
                         ax.imshow(arrays[i])
-                        ax.scatter(point_info['Xc'].iloc[i] - box_origin[i, 0], 
-                                   point_info['Yc'].iloc[i] - box_origin[i, 1],
+                        print(box_origin[i, 0])
+                        ax.scatter(point_info['Xc'].iloc[i] - box_origin[i, 1], 
+                                   point_info['Yc'].iloc[i] - box_origin[i, 0],
                                    color='r',s=10)
                     ax.axis('off')
                 
@@ -290,6 +296,14 @@ def main():
                 plt.close()
         
     print("Plots saved to {}".format(pdf_filename))
+    
+    # plot the 1st file with the positions of the centre of the fitted gaussians marked in red
+    fn = fn_list[0]
+    fn_arr, _ = read_fits(fn)
+    fig, ax = plt.subplots()
+    ax.imshow(fn_arr, vmin=args.cmap_range[0], vmax=args.cmap_range[1], origin='lower')
+    ax.scatter(output_df[output_df['File'] == fn]['Xc'],output_df[output_df['File'] == fn]['Yc'], color='r', s=10)
+    plt.show()
 if __name__ == "__main__":
     main()
 

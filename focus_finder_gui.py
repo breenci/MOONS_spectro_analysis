@@ -6,8 +6,6 @@ from matplotlib.gridspec import GridSpec
 import numpy as np
 import glob
 
-import matplotlib
-matplotlib.use('TkAgg')
 
 class pointSelectGUI():
     """Matplotlib GUI for point selection"""
@@ -36,7 +34,9 @@ class pointSelectGUI():
         grid = GridSpec(7, 4)
         # plot the first frame
         imax = self.fig.add_subplot(grid[:5,:3])
-        self.im = imax.imshow(self.arr_list[0], vmin=self.vmin, vmax=self.vmax)
+        # self.im = imax.imshow(self.arr_list[0], vmin=self.vmin, vmax=self.vmax, 
+        #                       origin='lower')
+        self.im = imax.pcolormesh(self.arr_list[0], vmin=self.vmin, vmax=self.vmax)
         # add cursor for easier selection of points
         cursor = Cursor(imax, useblit=True, color='red', linewidth=.5)
         imax.set_aspect('auto')
@@ -58,7 +58,7 @@ class pointSelectGUI():
         # add a subplot to show most recent point
         subax = self.fig.add_subplot(grid[1:4, 3])
         self.subim = subax.imshow(np.array(np.zeros((self.box_size, self.box_size))), 
-                                  vmin=self.vmin, vmax=self.vmax)
+                                  vmin=self.vmin, vmax=self.vmax, origin='lower')
         # turn off axis
         subax.axis('off')
         # update the plot whenever a point is added
