@@ -147,7 +147,7 @@ def main():
     # add an optional argument to specify a vmin and vmax for the images
     parser.add_argument("-v", "--cmap_range", nargs=2, type=int, help='Min and max values for colormap') 
     # add a command line argument for DAM positions
-    parser.add_argument("--DAM", nargs=2, type=float, help='DAM poistion start, end')
+    # parser.add_argument("--DAM", nargs=2, type=float, help='DAM poistion start, end')
     # parse the arguments
     args = parser.parse_args()
     
@@ -170,7 +170,7 @@ def main():
                                                   column_names=custom_column_names)
     
     # increment method
-    # Assumes that glob returns files in order
+    # Assumes that glob returns files in orde
     # DAM_pos = np.linspace(args.DAM[0], args.DAM[1], len(filenames))
     # col_names = ['filename', 'X', 'Y', 'Z']
     # data = {'filename':filenames, 'X':DAM_pos, 'Y':DAM_pos, 'Z':DAM_pos}
