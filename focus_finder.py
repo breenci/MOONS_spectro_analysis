@@ -159,21 +159,22 @@ def main():
     # I have implemented a simple start, end, increment model to be used in the 
     # meantime
     # ---------------------------------------------------------------------
-    # # Define the regular expression pattern
-    # pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
+    # Define the regular expression pattern
+    pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
 
-    # # Define custom column names (optional)
-    # custom_column_names = ["S", "X", "Y", "Z"]
+    # Define custom column names (optional)
+    custom_column_names = ["S", "X", "Y", "Z"]
     
-    # # Call the function and get the extracted variables as a Pandas DataFrame
-    # extracted_data = extract_variables_and_export(filenames, pattern, 
-    #                                               column_names=custom_column_names)
+    # Call the function and get the extracted variables as a Pandas DataFrame
+    extracted_data = extract_variables_and_export(filenames, pattern, 
+                                                  column_names=custom_column_names)
     
     # increment method
-    DAM_pos = np.linspace(args.DAM[0], args.DAM[1], len(filenames))
-    col_names = ['filename', 'X', 'Y', 'Z']
-    data = {'filename':filenames, 'X':DAM_pos, 'Y':DAM_pos, 'Z':DAM_pos}
-    extracted_data = pd.DataFrame(data)    
+    # Assumes that glob returns files in order
+    # DAM_pos = np.linspace(args.DAM[0], args.DAM[1], len(filenames))
+    # col_names = ['filename', 'X', 'Y', 'Z']
+    # data = {'filename':filenames, 'X':DAM_pos, 'Y':DAM_pos, 'Z':DAM_pos}
+    # extracted_data = pd.DataFrame(data)    
     # ---------------------------------------------------------------------
     
     # sort the DataFrame by the X column
@@ -260,8 +261,11 @@ def main():
             FWHM_mean = (FWHMx + FWHMy)/2
             
             # encircled energy calculation
+            # fixed boxes of size 16 and 6
             EE_fixed = ensquared(box, [8, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
             
+            # to add a metric add a col name to the list above and the metric 
+            # variable to the dataframe below
             # save the results to the dataframe
             output_df.loc[counter] = [fn, box_counter, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE_fixed]
             box_counter += 1
@@ -279,7 +283,6 @@ def main():
     
     # plot the each box with the fitted gaussian
     # TODO add a ellipse around the FWHM
-    # TODO add pixel coordinates a titles for each subplot
     pdf_filename = test_name + 'boxes.pdf'
     num_cols = 5
     
