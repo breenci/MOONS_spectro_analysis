@@ -5,6 +5,8 @@ import pandas as pd
 from scipy.interpolate import UnivariateSpline
 import math
 import argparse
+from numpy.polynomial.polynomial import Polynomial
+from matplotlib.colors import TwoSlopeNorm
 
 
 def find_plane(p1, p2, p3):
@@ -81,7 +83,7 @@ def find_point_on_plane(A, B, C, D, known_coords, missing_coord='z'):
 # write a function which takes Z and a score as input and fits a spline to the
 # score. Then find the Z value at the minimum of the spline over the range of Z
 # if there are any outliers, remove them and refit the spline
-def fit_spline(Z, score, k=5, outlier_f=5, minZ_step=0.01):
+def fit_spline(Z, score, k=1, outlier_f=5, minZ_step=0.01):
     
     # fit the spline
     spline_1D = UnivariateSpline(Z, score, k=k)
@@ -89,12 +91,12 @@ def fit_spline(Z, score, k=5, outlier_f=5, minZ_step=0.01):
     # outlier removal using residual
     residual = score - spline_1D(Z)
     # find the outliers
-    outliers_mask = np.abs(residual) > (outlier_f * np.std(residual)) + np.mean(residual)
+    outliers_mask = np.abs(residual) > outlier_f * np.std(residual)
     # remove the outliers present and refit the spline
     if outliers_mask.sum() > 0:
         Z = Z[~outliers_mask]
         score = score[~outliers_mask]
-        spline_1D = UnivariateSpline(Z, score, k=k)
+        spline_1D = UnivariateSpline(Z, score, k=k, s=10)
         
     # find the minimum of the spline
     spline_points = np.arange(Z[0], Z[-1], minZ_step/2)
@@ -102,6 +104,77 @@ def fit_spline(Z, score, k=5, outlier_f=5, minZ_step=0.01):
     spline_min_score = spline_1D(spline_min_Z)
     
     return spline_1D, (spline_min_Z, spline_min_score), outliers_mask
+
+
+# write a function which finds the minimum of a score as a function of Z for
+# each box id
+def find_minima_poly(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01, 
+                score_label='Score', deg=3):
+    # make sure the arrays are numpy arrays
+    coords = np.array(coords)
+    score = np.array(score)
+    ID_arr = np.array(ID_arr)
+    
+    # separate the Z and ID values for each box
+    unique_IDs = np.unique(ID_arr)
+    
+    # initialise an array to hold the minima
+    minima = np.zeros((len(unique_IDs), 3))
+
+    # create a square subplot grid
+    fig, axes = create_subplot_grid(len(unique_IDs))
+    axes = axes.flatten()
+    
+    # for each point ID, find the minimum of the score as a function of Z and
+    # the X and Y coordinates of the minimum
+    for n, ID in enumerate(unique_IDs):
+        
+        # find the coordinates of the point ID
+        coords_id = coords[ID_arr == ID]
+        
+        # X and Y min is just the median of the X and Y coordinates
+        # TODO: Check how much the points move in X and Y
+        X_id = coords_id[:,0]
+        Y_id = coords_id[:,1]
+        X_min = np.median(X_id)
+        Y_min = np.median(Y_id)
+        
+        # Z is found using polynomial fit
+        Z_id = coords_id[:,2]
+        score_id = score[ID_arr == ID]
+        poly_fit = Polynomial.fit(Z_id, score_id, deg=deg)
+        # calculate residuals and use them to reject outliers
+        residuals = score_id - poly_fit(Z_id)
+        outliers_mask = np.abs(residuals) > DAM_stoutlier_f * np.std(residuals)
+        if outliers_mask.sum() > 0:
+            Z_masked = Z_id[~outliers_mask]
+            masked_score = score_id[~outliers_mask]
+            poly_fit = Polynomial.fit(Z_masked, masked_score, deg=deg)
+            
+        # predict all possible values for dam steps
+        small_steps = np.arange(Z_id[0], Z_id[-1], minZ_step/5)
+        pred_score = poly_fit(small_steps)
+        # get the minumum
+        poly_min_Z = small_steps[np.argmin(pred_score)]
+        poly_min_score = np.min(pred_score)
+        # store the result
+        minima[n] = np.array([X_min, Y_min, poly_min_Z])
+        
+
+        # # sanity check the spline minima with a plot
+        axes[n].scatter(Z_id[~outliers_mask], score_id[~outliers_mask], marker='o', color='blue', 
+                        label='Included Points')
+        axes[n].scatter(Z_id[outliers_mask], score_id[outliers_mask], marker='o', color='b', 
+                        facecolors='none', label='Excluded Points')
+        axes[n].plot(small_steps, pred_score, color='r', label='Spline Fit')
+        axes[n].scatter(poly_min_Z, poly_min_score, color='r', label='Spline Min')
+        axes[n].set_xlabel('Z')
+        axes[n].set_ylabel(score_label)
+        axes[n].set_title(f'Point ID = {ID}')
+        plt.tight_layout()
+        fig.suptitle(f'{score_label}')
+    
+    return unique_IDs, minima
 
 
 def create_subplot_grid(num_plots):
@@ -185,6 +258,7 @@ def find_minima(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01,
         axes[n].set_xlabel('Z')
         axes[n].set_ylabel(score_label)
         axes[n].set_title(f'Point ID = {ID}')
+        plt.tight_layout(h_pad=2)
         fig.suptitle(f'{score_label}')
     
     plt.show()
@@ -211,6 +285,12 @@ def get_score(df, metric_names, weights):
     score = np.sum(wmetric_arr, axis=1)
     
     return score
+
+
+# write a function to find the signed distance of a point from a plane
+def find_signed_distance(A, B, C, D, point):
+    dist = (A * point[:,0] + B * point[:,1] + C * point[:,2] + D) / np.sqrt(A**2 + B**2 + C**2)
+    return dist
 
 
 def main():
@@ -280,8 +360,8 @@ def main():
     # of Z
     for n, metric in enumerate(args.metrics):
         # find the minimum of the metric as a function of Z
-        IDs, minima = find_minima(coords, metrics_df[metric], metrics_df['Point ID'], 
-                                  DAM_stoutlier_f=5, minZ_step=0.01, score_label=metric)
+        IDs, minima = find_minima_poly(coords, metrics_df[metric], metrics_df['Point ID'], 
+                                  DAM_stoutlier_f=2, minZ_step=0.01, score_label=metric)
         
         # fit a plane to the spline minima
         (A, B, C, D) = plane_fitter(minima)
@@ -295,8 +375,8 @@ def main():
         
     # find the minimum of the weighted sum of metrics as a function of Z for
     # each DAM
-    score_IDs, score_minima = find_minima(coords, mixed_score, metrics_df['Point ID'], 
-                                           DAM_stoutlier_f=5, minZ_step=0.01,
+    score_IDs, score_minima = find_minima_poly(coords, mixed_score, metrics_df['Point ID'], 
+                                           DAM_stoutlier_f=2, minZ_step=0.01,
                                            score_label='Mixed Score')
 
     (A, B, C, D) = plane_fitter(score_minima)
@@ -308,63 +388,6 @@ def main():
     print(f'Score: DAM1 = {DAM1_z} DAM2 = {DAM2_z} DAM3 = {DAM3_z}')
         
     
-    
-    
-    # N_points = 1000
-    # range_coords = np.zeros((len(IDs) * N_points, 3))
-    # for n, ID in enumerate(IDs):
-    #     Xc = score_minima[n,0]
-    #     Yc = score_minima[n,1]
-        
-    #     Z_range = range[n]
-    #     Z_full = np.linspace(Z_range[0], Z_range[1], N_points)
-    #     X_full = np.repeat(Xc, len(Z_full))
-    #     Y_full = np.repeat(Yc, len(Z_full))
-    #     in_range_coords = np.vstack((X_full, Y_full, Z_full)).T
-        
-    #     range_coords[n * N_points:(n+1) * N_points,:] = in_range_coords
-        
-        
-        
-    
-    
-    # plot the DAM positions in 3D
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    # Plot the DAM1 positions
-    ax.scatter(DAM1[:,0], DAM1[:,1], DAM1[:,2], color='m', label='DAM1', alpha=0.5)
-    # Plot the DAM2 positions
-    ax.scatter(DAM2[:,0], DAM2[:,1], DAM2[:,2], color='k', label='DAM2', alpha=0.5)
-    #plot the DAM3 positions
-    ax.scatter(DAM3[:,0], DAM3[:,1], DAM3[:,2], color='g', label='DAM3', alpha=0.5)
-    # plot the fit centres
-    # ax.scatter(metrics_df['Xc'], metrics_df['Yc'], metrics_df['DAM X'], color='b', label='Fit Centres')
-    ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.legend()
-    plt.show()
-
-    
-    
-    # plot the spline mimima and the plane
-    x = np.linspace(np.min(score_minima[:,0]), np.max(score_minima[:,0]), 100)
-    y = np.linspace(np.min(score_minima[:,1]), np.max(score_minima[:,1]), 100)
-    X, Y = np.meshgrid(x, y)
-    Z = (-A * X - B * Y - D) / C
-    
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
-    ax.plot_surface(X, Y, Z, alpha=0.5)
-    plt.show()
-    
-    
-    # find the intersection of the plane with the DAM1, DAM2 and DAM3 axes
-    DAM1_z = find_point_on_plane(A, B, C, D, DAM_offsets[0][:2], missing_coord='z')
-    DAM2_z = find_point_on_plane(A, B, C, D, DAM_offsets[1][:2], missing_coord='z')
-    DAM3_z = find_point_on_plane(A, B, C, D, DAM_offsets[2][:2], missing_coord='z')
-    
-    
     # new meshgrid for plotting
     x = np.linspace(-270, 270, 100)
     y = np.linspace(-270, 131, 100)
@@ -373,11 +396,11 @@ def main():
     
 
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.scatter(DAM1[:,0], DAM1[:,1], DAM1[:,2], color='m', label='DAM1', alpha=0.01)
+    ax.scatter(DAM1[:,0], DAM1[:,1], DAM1[:,2], color='m', label='DAM1', alpha=0.005)
     # Plot the DAM2 positions
-    ax.scatter(DAM2[:,0], DAM2[:,1], DAM2[:,2], color='k', label='DAM2', alpha=0.01)
+    ax.scatter(DAM2[:,0], DAM2[:,1], DAM2[:,2], color='k', label='DAM2', alpha=0.005)
     #plot the DAM3 positions
-    ax.scatter(DAM3[:,0], DAM3[:,1], DAM3[:,2], color='g', label='DAM3', alpha=0.01)
+    ax.scatter(DAM3[:,0], DAM3[:,1], DAM3[:,2], color='g', label='DAM3', alpha=0.005)
     ax.scatter(DAM1[0,0], DAM1[0,1], DAM1_z, color='b', label='DAM1_z')
     ax.scatter(DAM2[0,0], DAM2[0,1], DAM2_z, color='b', label='DAM2_z')
     ax.scatter(DAM3[0,0], DAM3[0,1], DAM3_z, color='b', label='DAM3_z')
@@ -387,6 +410,26 @@ def main():
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
+
+
+    # plot the just the spline mimima and the plane 
+    x = np.linspace(np.min(score_minima[:,0]), np.max(score_minima[:,0]), 100)
+    y = np.linspace(np.min(score_minima[:,1]), np.max(score_minima[:,1]), 100)
+    X, Y = np.meshgrid(x, y)
+    Z = (-A * X - B * Y - D) / C
+    
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
+    ax.plot_surface(X, Y, Z, alpha=0.5)
+    
+    # plot the residuals of the plane fit
+    residuals = find_signed_distance(A, B, C, D, score_minima)
+    fig, ax = plt.subplots()
+    scat = ax.scatter(score_minima[:,0], score_minima[:,1], c=residuals, 
+                      norm=TwoSlopeNorm(vcenter=0))
+    ax.set_xlabel('X (mm)')
+    ax.set_ylabel('Y (mm)')
+    cb = fig.colorbar(scat, label='Distance from Plane (mm)')
     
     plt.show()
     

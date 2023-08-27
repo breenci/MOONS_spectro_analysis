@@ -271,7 +271,7 @@ def main():
     # TODO add a ellipse around the FWHM
     # TODO add pixel coordinates a titles for each subplot
     pdf_filename = test_name + 'boxes.pdf'
-    num_cols = 2
+    num_cols = 5
     
     with PdfPages(pdf_filename) as pdf:
             for filename, arrays in box_dict.items():
@@ -284,7 +284,6 @@ def main():
                 for i, ax in enumerate(axes.flatten()):
                     if i < num_arrays:
                         ax.imshow(arrays[i])
-                        print(box_origin[i, 0])
                         ax.scatter(point_info['Xc'].iloc[i] - box_origin[i, 1], 
                                    point_info['Yc'].iloc[i] - box_origin[i, 0],
                                    color='r',s=10)
@@ -297,13 +296,7 @@ def main():
         
     print("Plots saved to {}".format(pdf_filename))
     
-    # plot the 1st file with the positions of the centre of the fitted gaussians marked in red
-    fn = fn_list[0]
-    fn_arr, _ = read_fits(fn)
-    fig, ax = plt.subplots()
-    ax.imshow(fn_arr, vmin=args.cmap_range[0], vmax=args.cmap_range[1], origin='lower')
-    ax.scatter(output_df[output_df['File'] == fn]['Xc'],output_df[output_df['File'] == fn]['Yc'], color='r', s=10)
-    plt.show()
+    
 if __name__ == "__main__":
     main()
 
