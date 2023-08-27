@@ -140,8 +140,7 @@ def main():
     parser = argparse.ArgumentParser(description="Find the best focus position")
     # add an argument for folder containing the data
     parser.add_argument("folder", help="Folder containing the data")
-    
-    # add optional arguments for box size and preload selection
+    # add optional arguments for box size, preload selection, and dark
     parser.add_argument("-b", "--box_size", type=int, default=30, help="Size of the box around each point")
     parser.add_argument("-p", "--preload_selection", help="File containing preloaded selection")
     parser.add_argument("-d", "--dark", help="Dark frame to subtract from the data")
@@ -170,14 +169,11 @@ def main():
     # extracted_data = extract_variables_and_export(filenames, pattern, 
     #                                               column_names=custom_column_names)
     
-    
+    # increment method
     DAM_pos = np.linspace(args.DAM[0], args.DAM[1], len(filenames))
     col_names = ['filename', 'X', 'Y', 'Z']
     data = {'filename':filenames, 'X':DAM_pos, 'Y':DAM_pos, 'Z':DAM_pos}
-    extracted_data = pd.DataFrame(data)
-    
-    print(extracted_data)
-    
+    extracted_data = pd.DataFrame(data)    
     # ---------------------------------------------------------------------
     
     # sort the DataFrame by the X column
@@ -254,13 +250,14 @@ def main():
             # fit the model to the data
             fit_result = g2d_model.fit(box, params, x=X, y=Y)
             
+            # get the fit parameters
             FWHMx = fit_result.params['fwhmx'].value
             FWHMy = fit_result.params['fwhmy'].value
+            # centre needs to be corrected to account for box position
             Xc = fit_result.params['centerx'].value + box_origin[counter,1]
             Yc = fit_result.params['centery'].value + box_origin[counter,0]
             
             FWHM_mean = (FWHMx + FWHMy)/2
-            FWHM_discrete = int(np.ceil(FWHM_mean))
             
             # encircled energy calculation
             EE_fixed = ensquared(box, [8, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
@@ -272,7 +269,8 @@ def main():
     print("Analysis complete")
     
     # save the dataframe to a csv file
-    test_name = 'placeholder_test_name'
+    # change this to extract test name from file format
+    test_name = 'placeholder_test_name_'
     output_df.to_csv(test_name + 'output.csv', index=False)
 
     print("Saving plots...")
@@ -285,17 +283,21 @@ def main():
     pdf_filename = test_name + 'boxes.pdf'
     num_cols = 5
     
+    # plot it all 
     with PdfPages(pdf_filename) as pdf:
             for filename, arrays in box_dict.items():
                 num_arrays = len(arrays)
                 num_rows = int(np.ceil(num_arrays // num_cols))
                 fig, axes = plt.subplots(num_rows, num_cols, figsize=(5 * num_cols, 3 * num_rows))
-                plt.subplots_adjust(hspace=0.5)
+                plt.subplots_adjust(hspace=1.5)
                 
                 point_info = output_df[output_df['File'] == filename]
                 for i, ax in enumerate(axes.flatten()):
                     if i < num_arrays:
                         ax.imshow(arrays[i])
+                        box_Xc = point_info['Xc'].iloc[i]
+                        box_Yc = point_info['Yc'].iloc[i]
+                        ax.set_title(f'{box_Xc:.1f}, {box_Yc:.1f}')
                         ax.scatter(point_info['Xc'].iloc[i] - box_origin[i, 1], 
                                    point_info['Yc'].iloc[i] - box_origin[i, 0],
                                    color='r',s=10)
