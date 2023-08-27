@@ -106,6 +106,7 @@ def fit_spline(Z, score, k=1, outlier_f=5, minZ_step=0.01):
     return spline_1D, (spline_min_Z, spline_min_score), outliers_mask
 
 
+
 # write a function which finds the minimum of a score as a function of Z for
 # each box id
 def find_minima_poly(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01, 
@@ -194,7 +195,7 @@ def create_subplot_grid(num_plots):
 
 # write a function which finds the minimum of a score as a function of Z for
 # each box id
-def find_minima(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01, 
+def find_minima_spline(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01, 
                 score_label='Score', limit=None):
     # make sure the arrays are numpy arrays
     coords = np.array(coords)
@@ -361,7 +362,7 @@ def main():
     for n, metric in enumerate(args.metrics):
         # find the minimum of the metric as a function of Z
         IDs, minima = find_minima_poly(coords, metrics_df[metric], metrics_df['Point ID'], 
-                                  DAM_stoutlier_f=2, minZ_step=0.01, score_label=metric)
+                                  DAM_stoutlier_f=3, minZ_step=0.01, score_label=metric)
         
         # fit a plane to the spline minima
         (A, B, C, D) = plane_fitter(minima)
@@ -376,7 +377,7 @@ def main():
     # find the minimum of the weighted sum of metrics as a function of Z for
     # each DAM
     score_IDs, score_minima = find_minima_poly(coords, mixed_score, metrics_df['Point ID'], 
-                                           DAM_stoutlier_f=2, minZ_step=0.01,
+                                           DAM_stoutlier_f=3, minZ_step=0.01,
                                            score_label='Mixed Score')
 
     (A, B, C, D) = plane_fitter(score_minima)
@@ -429,6 +430,7 @@ def main():
                       norm=TwoSlopeNorm(vcenter=0))
     ax.set_xlabel('X (mm)')
     ax.set_ylabel('Y (mm)')
+    ax.set_title('Residuals of Plane Fit')
     cb = fig.colorbar(scat, label='Distance from Plane (mm)')
     
     plt.show()
