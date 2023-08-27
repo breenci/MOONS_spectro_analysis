@@ -147,7 +147,8 @@ def main():
     parser.add_argument("-d", "--dark", help="Dark frame to subtract from the data")
     # add an optional argument to specify a vmin and vmax for the images
     parser.add_argument("-v", "--cmap_range", nargs=2, type=int, help='Min and max values for colormap') 
-    
+    # add a command line argument for DAM positions
+    parser.add_argument("--DAM", nargs=2, type=float, help='DAM poistion start, end')
     # parse the arguments
     args = parser.parse_args()
     
@@ -155,17 +156,28 @@ def main():
     filenames = glob.glob(args.folder)
     
     # TODO looks like this information will not be in filename. Will likely need
-    # to extract from template obd file. WT to provide this?
+    # to extract from template obd file.
+    # I have implemented a simple start, end, increment model to be used in the 
+    # meantime
     # ---------------------------------------------------------------------
-    # Define the regular expression pattern
-    pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
+    # # Define the regular expression pattern
+    # pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
 
-    # Define custom column names (optional)
-    custom_column_names = ["S", "X", "Y", "Z"]
+    # # Define custom column names (optional)
+    # custom_column_names = ["S", "X", "Y", "Z"]
     
-    # Call the function and get the extracted variables as a Pandas DataFrame
-    extracted_data = extract_variables_and_export(filenames, pattern, 
-                                                  column_names=custom_column_names)
+    # # Call the function and get the extracted variables as a Pandas DataFrame
+    # extracted_data = extract_variables_and_export(filenames, pattern, 
+    #                                               column_names=custom_column_names)
+    
+    
+    DAM_pos = np.linspace(args.DAM[0], args.DAM[1], len(filenames))
+    col_names = ['filename', 'X', 'Y', 'Z']
+    data = {'filename':filenames, 'X':DAM_pos, 'Y':DAM_pos, 'Z':DAM_pos}
+    extracted_data = pd.DataFrame(data)
+    
+    print(extracted_data)
+    
     # ---------------------------------------------------------------------
     
     # sort the DataFrame by the X column
