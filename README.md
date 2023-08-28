@@ -59,7 +59,7 @@ This script finds the optimal position of the DAM motors using the results from 
 
 The following example uses data from cooldown 3. The data is located in the folder ```copies_test_3A.01.13``` which has been provided. The data is a focus sweep of the MOONS spectrograph. The data is in the form of 2D images. The first step is to run focus_finder.py to analyse the data. The following command should be used:
 
-```python focus_finder.py "data/raw/copies_test_3A.01.13/test_3A.01.13.YJ1.ARC*.fits" -d "data/raw/copies_test_3A.01.13/test_3A.01.13.YJ1.DARK.01.fits" -b 30 -v 0 1000 --DAM -20 10 -p "points.txt"```
+```python focus_finder.py "data/raw/copies_test_3A.01.13/test_3A.01.13.YJ1.ARC*.fits" -d "data/raw/copies_test_3A.01.13/test_3A.01.13.YJ1.DARK.01.fits" -b 30 -v 0 1000 -p "points.txt"```
 
 Then to find the optimal DAM positions the following command should be used:
 
