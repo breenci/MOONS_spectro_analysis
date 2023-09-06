@@ -125,7 +125,7 @@ def find_minima_poly(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01,
     # create a square subplot grid
     fig, axes = create_subplot_grid(len(unique_IDs))
     axes = axes.flatten()
-    
+    fit_list = []
     # for each point ID, find the minimum of the score as a function of Z and
     # the X and Y coordinates of the minimum
     for n, ID in enumerate(unique_IDs):
@@ -134,7 +134,6 @@ def find_minima_poly(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01,
         coords_id = coords[ID_arr == ID]
         
         # X and Y min is just the median of the X and Y coordinates
-        # TODO: Check how much the points move in X and Y
         X_id = coords_id[:,0]
         Y_id = coords_id[:,1]
         X_min = np.median(X_id)
@@ -144,13 +143,16 @@ def find_minima_poly(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01,
         Z_id = coords_id[:,2]
         score_id = score[ID_arr == ID]
         poly_fit = Polynomial.fit(Z_id, score_id, deg=deg)
+        fit_list.append(poly_fit)
         # calculate residuals and use them to reject outliers
         residuals = score_id - poly_fit(Z_id)
         outliers_mask = np.abs(residuals) > DAM_stoutlier_f * np.std(residuals)
+        
         if outliers_mask.sum() > 0:
             Z_masked = Z_id[~outliers_mask]
             masked_score = score_id[~outliers_mask]
             poly_fit = Polynomial.fit(Z_masked, masked_score, deg=deg)
+            fit_list.append(poly_fit)
             
         # predict all possible values for dam steps
         small_steps = np.arange(Z_id[0], Z_id[-1], minZ_step/5)
@@ -175,7 +177,7 @@ def find_minima_poly(coords, score, ID_arr, DAM_stoutlier_f=5, minZ_step=0.01,
         plt.tight_layout()
         fig.suptitle(f'{score_label}')
     
-    return unique_IDs, minima
+    return unique_IDs, minima, fit_list
 
 
 def create_subplot_grid(num_plots):
@@ -297,8 +299,17 @@ def find_signed_distance(A, B, C, D, point):
 def main():
     # Define the DAM offsets
     # Coordinate system is X, Y are in the plane of the detector and Z is along
-    # the direction of travel of the motors 
-    DAM_offsets = [[0, -263.5, 0] ,[-228.2, 131.7, 0], [228.2, 131.7, 0]]
+    # the direction of travel of the motors
+    # options for DAM offsets are:
+    option = 1
+    if option == 1:
+        DAM_offsets = [[0, 263.5, 0] ,[228.2, -131.7, 0], [-228.2, -131.7, 0]]
+    if option == 2:
+        DAM_offsets = [[0, 263.5, 0] ,[-228.2, -131.7, 0], [228.2, -131.7, 0]]
+    if option == 3:
+        DAM_offsets = [[0, -263.5, 0] ,[228.2, 131.7, 0], [-228.2, 131.7, 0]]
+    if option == 4:
+        DAM_offsets = [[0, -263.5, 0] ,[-228.2, 131.7, 0], [228.2, 131.7, 0]]
 
     
     # Convert pixel coordinates to mm
@@ -327,7 +338,7 @@ def main():
     metrics_df['DAM X'] = metrics_df['DAM X'] * DAM_step_size
     metrics_df['DAM Y'] = metrics_df['DAM Y'] * DAM_step_size
     metrics_df['DAM Z'] = metrics_df['DAM Z'] * DAM_step_size
-    
+        
     # convert the Xc, Yc to mm
     metrics_df['Xc'] = metrics_df['Xc'] * pixel_size - array_centre_mm[0]
     metrics_df['Yc'] = metrics_df['Yc'] * pixel_size - array_centre_mm[1]
@@ -361,7 +372,7 @@ def main():
     # of Z
     for n, metric in enumerate(args.metrics):
         # find the minimum of the metric as a function of Z
-        IDs, minima = find_minima_poly(coords, metrics_df[metric], metrics_df['Point ID'], 
+        IDs, minima, metric_fits = find_minima_poly(coords, metrics_df[metric], metrics_df['Point ID'], 
                                   DAM_stoutlier_f=3, minZ_step=0.01, score_label=metric)
         
         # fit a plane to the spline minima
@@ -371,12 +382,21 @@ def main():
         DAM2_z = find_point_on_plane(A, B, C, D, DAM_offsets[1][:2], missing_coord='z')
         DAM3_z = find_point_on_plane(A, B, C, D, DAM_offsets[2][:2], missing_coord='z')
         
-        print(f'{metric}: DAM1 = {DAM1_z} DAM2 = {DAM2_z} DAM3 = {DAM3_z}')
+        print(f'{metric}: DAM1 = {DAM1_z:.3} DAM2 = {DAM2_z:.3} DAM3 = {DAM3_z:.3}')
+        
+        # predict the score for each spot using the plane fit
+        num_points = 9
+        pred_coords = np.zeros((num_points, 3))
+        for i in range(9):
+            Z_point = find_point_on_plane(A, B, C, D, coords[i,:2], missing_coord='z')
+            pred_coords[i] = np.array([coords[i,0], coords[i,1], Z_point])
+            pred_score = metric_fits[i](Z_point)
+            print(pred_score)
         
         
     # find the minimum of the weighted sum of metrics as a function of Z for
     # each DAM
-    score_IDs, score_minima = find_minima_poly(coords, mixed_score, metrics_df['Point ID'], 
+    score_IDs, score_minima, score_fits = find_minima_poly(coords, mixed_score, metrics_df['Point ID'], 
                                            DAM_stoutlier_f=3, minZ_step=0.01,
                                            score_label='Mixed Score')
 
@@ -386,9 +406,8 @@ def main():
     DAM2_z = find_point_on_plane(A, B, C, D, DAM_offsets[1][:2], missing_coord='z')
     DAM3_z = find_point_on_plane(A, B, C, D, DAM_offsets[2][:2], missing_coord='z')
     
-    print(f'Score: DAM1 = {DAM1_z} DAM2 = {DAM2_z} DAM3 = {DAM3_z}')
+    print(f'Score: DAM1 = {DAM1_z:.2} DAM2 = {DAM2_z:.2} DAM3 = {DAM3_z:.2}')
         
-    
     # new meshgrid for plotting
     x = np.linspace(-270, 270, 100)
     y = np.linspace(-270, 131, 100)
@@ -406,6 +425,7 @@ def main():
     ax.scatter(DAM2[0,0], DAM2[0,1], DAM2_z, color='b', label='DAM2_z')
     ax.scatter(DAM3[0,0], DAM3[0,1], DAM3_z, color='b', label='DAM3_z')
     ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
+    ax.scatter(pred_coords[:,0], pred_coords[:,1], pred_coords[:,2], color='k', label='Predicted Points')
     #surface plot
     ax.plot_surface(X, Y, Z, alpha=0.5)
     ax.set_xlabel('X')
@@ -421,6 +441,7 @@ def main():
     
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
     ax.scatter(score_minima[:,0], score_minima[:,1], score_minima[:,2], color='r', label='Spline Minima')
+    ax.scatter(pred_coords[:,0], pred_coords[:,1], pred_coords[:,2], color='k', label='Predicted Points')
     ax.plot_surface(X, Y, Z, alpha=0.5)
     
     # plot the residuals of the plane fit

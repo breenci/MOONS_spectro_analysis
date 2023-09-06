@@ -11,7 +11,6 @@ from matplotlib.backends.backend_pdf import PdfPages
 import os
 
 
-
 def extract_variables_and_export(filenames, pattern, column_names=None):
     # Initialize lists to store extracted variables
     variable_data = []
@@ -102,6 +101,7 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
         for x, y in zip(X, Y):
             # Read the fits file
             data, header = read_fits(filename)
+            data = data.astype(float)
             
             # Subtract the dark frame if provided
             if dark is not None:
@@ -145,7 +145,7 @@ def main():
     parser.add_argument("-p", "--preload_selection", help="File containing preloaded selection")
     parser.add_argument("-d", "--dark", help="Dark frame to subtract from the data")
     # add an optional argument to specify a vmin and vmax for the images
-    parser.add_argument("-v", "--cmap_range", nargs=2, type=int, help='Min and max values for colormap') 
+    parser.add_argument("-v", "--cmap_range", nargs=2, type=int, help='Min and max values for colormap')
     # add a command line argument for DAM positions
     # parser.add_argument("--DAM", nargs=2, type=float, help='DAM poistion start, end')
     # parse the arguments
@@ -153,6 +153,7 @@ def main():
     
     # Sample list of filenames
     filenames = glob.glob(args.folder)
+    print(filenames)
     
     # TODO looks like this information will not be in filename. Will likely need
     # to extract from template obd file.
@@ -161,6 +162,7 @@ def main():
     # ---------------------------------------------------------------------
     # Define the regular expression pattern
     pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
+    # pattern = r'\.X(\w{1}\d{3})\.'
 
     # Define custom column names (optional)
     custom_column_names = ["S", "X", "Y", "Z"]
@@ -247,6 +249,10 @@ def main():
             
             # guess the parameters
             params = g2d_model.guess(flatbox, flatX, flatY)
+            params['fwhmx'].set(min=2.5, max=30)
+            params['fwhmy'].set(min=2.5, max=30)
+            params['centerx'].set(value=box.shape[0]/2, min=0, max=box.shape[0])
+            params['centery'].set(value=box.shape[1]/2, min=0, max=box.shape[1])
             
             # fit the model to the data
             fit_result = g2d_model.fit(box, params, x=X, y=Y)
@@ -262,7 +268,7 @@ def main():
             
             # encircled energy calculation
             # fixed boxes of size 16 and 6
-            EE_fixed = ensquared(box, [8, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
+            EE_fixed = 1 #ensquared(box, [8, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
             
             # to add a metric add a col name to the list above and the metric 
             # variable to the dataframe below
@@ -274,7 +280,7 @@ def main():
     
     # save the dataframe to a csv file
     # change this to extract test name from file format
-    test_name = 'placeholder_test_name_'
+    test_name = 'RI1_'
     output_df.to_csv(test_name + 'output.csv', index=False)
 
     print("Saving plots...")
@@ -284,7 +290,7 @@ def main():
     # plot the each box with the fitted gaussian
     # TODO add a ellipse around the FWHM
     pdf_filename = test_name + 'boxes.pdf'
-    num_cols = 5
+    num_cols = 3
     
     # plot it all 
     with PdfPages(pdf_filename) as pdf:
