@@ -5,6 +5,7 @@ from matplotlib.widgets import Cursor, Slider, Button, TextBox
 from matplotlib.gridspec import GridSpec
 import numpy as np
 import glob
+import os
 
 
 class pointSelectGUI():
@@ -106,7 +107,9 @@ class pointSelectGUI():
     def _save_button_callback(self, event):
         """Save the selected points to a file"""
         pos = self.klicker.get_positions()
-        np.savetxt('points.txt', pos["Selected Points"])
+        dirname = os.path.dirname(self.fn_list[0])
+        save_fn = os.path.join(dirname, 'points.txt')
+        np.savetxt(save_fn, pos["Selected Points"])
 
  
     def _on_points_changed(self, position, klass):

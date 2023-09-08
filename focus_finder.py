@@ -8,6 +8,7 @@ from focus_finder_gui import pointSelectGUI
 import lmfit
 import argparse
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Ellipse
 import os
 
 
@@ -98,16 +99,17 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
     for filename in fits_files:
         n = 0
         boxes = []
-        for x, y in zip(X, Y):
-            # Read the fits file
-            data, header = read_fits(filename)
-            data = data.astype(float)
+        
+        # Read the fits file
+        data, header = read_fits(filename)
+        data = data.astype(float)
+        
+        # Subtract the dark frame if provided
+        if dark is not None:
+            dark_data, _ = read_fits(dark)
+            data -= dark_data
             
-            # Subtract the dark frame if provided
-            if dark is not None:
-                dark_data, _ = read_fits(dark)
-                data -= dark_data
-
+        for x, y in zip(X, Y):
             # Get the box
             box, box0 = get_box(data, x, y, box_size=box_size)
             boxes.append(box)
@@ -118,7 +120,7 @@ def get_boxes_from_files(fits_files, X, Y, box_size=30, dark=None):
     return result, np.array(box0s)
 
 
-def ensquared(array, radius, center):
+def ensquared(array, radius, center, id=None):
     """
     Calculate the ensquared energy of a 2D array.
     
@@ -127,11 +129,21 @@ def ensquared(array, radius, center):
     :param center: Center of the aperture.
     :return: Ensquared energy.
     """
-    outer_box,_ = get_box(array, center[0], center[1], box_size=radius[0])
-    inner_box,_ = get_box(array, center[0], center[1], box_size=radius[1])
-        
-    return 1 - np.sum(inner_box)/np.sum(outer_box)
+    try:
+        outer_box,_ = get_box(array, center[0], center[1], box_size=radius[0])
+        inner_box,_ = get_box(array, center[0], center[1], box_size=radius[1])
+    except ValueError:
+        if id is not None:
+            print("Box {} is not within the bounds of the array".format(id))
+        else:
+            print("Box is not within the bounds of the array")
+        return np.nan
     
+    outer_flux = np.sum(outer_box) - np.sum(inner_box)
+    total_flux = np.sum(outer_box)
+    
+    return outer_flux / total_flux
+
 
 
 def main():
@@ -155,10 +167,7 @@ def main():
     filenames = glob.glob(args.folder)
     print(filenames)
     
-    # TODO looks like this information will not be in filename. Will likely need
-    # to extract from template obd file.
-    # I have implemented a simple start, end, increment model to be used in the 
-    # meantime
+
     # ---------------------------------------------------------------------
     # Define the regular expression pattern
     pattern = r'\.S(\w{1}\d{3})\.X(\w{1}\d{3})\.Y(\w{1}\d{3})\.Z(\w{1}\d{3})'
@@ -170,13 +179,7 @@ def main():
     # Call the function and get the extracted variables as a Pandas DataFrame
     extracted_data = extract_variables_and_export(filenames, pattern, 
                                                   column_names=custom_column_names)
-    
-    # increment method
-    # Assumes that glob returns files in orde
-    # DAM_pos = np.linspace(args.DAM[0], args.DAM[1], len(filenames))
-    # col_names = ['filename', 'X', 'Y', 'Z']
-    # data = {'filename':filenames, 'X':DAM_pos, 'Y':DAM_pos, 'Z':DAM_pos}
-    # extracted_data = pd.DataFrame(data)    
+      
     # ---------------------------------------------------------------------
     
     # sort the DataFrame by the X column
@@ -202,8 +205,6 @@ def main():
     box_centres = gui.selection['Selected Points']
         
     # Do dark subtraction if specified
-    # TODO can this be done in box loop? Potentially faster (?) but might make 
-    # plotting more difficult
     print("Extracting boxes for analysis...")
     if args.dark:
         # get the boxes around the selected points
@@ -234,12 +235,14 @@ def main():
     # Loop through each box in each file and fit a 2D Gaussian
     print("Running analysis...")
     for fn in fn_list:
+        residual_list = []
         # get dam position from extracted_data
         DAMx = int(extracted_data.loc[extracted_data['filename'] == fn, 'X'].iloc[0])
         DAMy = int(extracted_data.loc[extracted_data['filename'] == fn, 'Y'].iloc[0])
         DAMz = int(extracted_data.loc[extracted_data['filename'] == fn, 'Z'].iloc[0])
 
         box_counter = 0
+        last_cntrs = np.zeros((n_points, 2))
         for box in box_dict[fn]:
             X, Y = np.meshgrid(np.arange(box.shape[0]), np.arange(box.shape[1]))
             # flatten X, Y and box to guess the parameters
@@ -249,46 +252,53 @@ def main():
             
             # guess the parameters
             params = g2d_model.guess(flatbox, flatX, flatY)
-            params['fwhmx'].set(min=2.5, max=30)
-            params['fwhmy'].set(min=2.5, max=30)
-            params['centerx'].set(value=box.shape[0]/2, min=0, max=box.shape[0])
-            params['centery'].set(value=box.shape[1]/2, min=0, max=box.shape[1])
-            
+            params['fwhmx'].set(min=2, max=40)
+            params['fwhmy'].set(min=2, max=40)
+            if last_cntrs[box_counter, 0] != 0:
+                params['centerx'].set(value=last_cntrs[box_counter,0], min=0, max=2*args.box_size)
+                params['centery'].set(value=last_cntrs[box_counter,1], min=0, max=2*args.box_size)
+            else:
+                params['centerx'].set(min=0, max=2*args.box_size)
+                params['centery'].set(min=0, max=2*args.box_size)
+
             # fit the model to the data
             fit_result = g2d_model.fit(box, params, x=X, y=Y)
+            
             
             # get the fit parameters
             FWHMx = fit_result.params['fwhmx'].value
             FWHMy = fit_result.params['fwhmy'].value
+            Xc_in_box = fit_result.params['centerx'].value
+            Yc_in_box = fit_result.params['centery'].value
+            last_cntrs[box_counter, 0] = Xc_in_box
+            last_cntrs[box_counter, 1] = Yc_in_box
             # centre needs to be corrected to account for box position
-            Xc = fit_result.params['centerx'].value + box_origin[counter,1]
-            Yc = fit_result.params['centery'].value + box_origin[counter,0]
-            
-            FWHM_mean = (FWHMx + FWHMy)/2
+            Xc = Xc_in_box + box_origin[counter,1]
+            Yc = Yc_in_box + box_origin[counter,0]
             
             # encircled energy calculation
             # fixed boxes of size 16 and 6
-            EE_fixed = 1 #ensquared(box, [8, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])
-            
+            EE_fixed = ensquared(box, [8, 3], [fit_result.params['centerx'].value, fit_result.params['centery'].value])            
             # to add a metric add a col name to the list above and the metric 
             # variable to the dataframe below
             # save the results to the dataframe
             output_df.loc[counter] = [fn, box_counter, DAMx, DAMy, DAMz, Xc, Yc, FWHMx, FWHMy, EE_fixed]
             box_counter += 1
             counter += 1
+            
     print("Analysis complete")
     
     # save the dataframe to a csv file
     # change this to extract test name from file format
-    test_name = 'RI1_'
-    output_df.to_csv(test_name + 'output.csv', index=False)
+    test_name = os.path.dirname(fn_list[0]) + '/'
+    output_df.to_csv(test_name + 'output.csv', index=False, na_rep='NaN')
 
     print("Saving plots...")
     # ---------------------------------------------------------------------
     # Plotting
     
     # plot the each box with the fitted gaussian
-    # TODO add a ellipse around the FWHM
+    # TODO add the EE boxes to this plot
     pdf_filename = test_name + 'boxes.pdf'
     num_cols = 3
     
@@ -296,20 +306,25 @@ def main():
     with PdfPages(pdf_filename) as pdf:
             for filename, arrays in box_dict.items():
                 num_arrays = len(arrays)
-                num_rows = int(np.ceil(num_arrays // num_cols))
+                num_rows = int(np.ceil(num_arrays / num_cols))
                 fig, axes = plt.subplots(num_rows, num_cols, figsize=(5 * num_cols, 3 * num_rows))
                 plt.subplots_adjust(hspace=1.5)
                 
                 point_info = output_df[output_df['File'] == filename]
                 for i, ax in enumerate(axes.flatten()):
                     if i < num_arrays:
-                        ax.imshow(arrays[i])
+                        ax.imshow(arrays[i], origin='lower', cmap='viridis')
                         box_Xc = point_info['Xc'].iloc[i]
                         box_Yc = point_info['Yc'].iloc[i]
                         ax.set_title(f'{box_Xc:.1f}, {box_Yc:.1f}')
                         ax.scatter(point_info['Xc'].iloc[i] - box_origin[i, 1], 
                                    point_info['Yc'].iloc[i] - box_origin[i, 0],
                                    color='r',s=10)
+                        # plot an ellipse around the FWHM
+                        ax.add_patch(Ellipse((point_info['Xc'].iloc[i] - box_origin[i, 1], 
+                                              point_info['Yc'].iloc[i] - box_origin[i, 0]),
+                                              point_info['FWHMx'].iloc[i], point_info['FWHMy'].iloc[i],
+                                              angle=0, linewidth=1, fill=False, color='r'))
                     ax.axis('off')
                 
                 plt.suptitle(os.path.basename(filename))
